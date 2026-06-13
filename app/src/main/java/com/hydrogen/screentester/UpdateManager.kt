@@ -3,6 +3,7 @@ package com.hydrogen.screentester
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import androidx.core.content.edit
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -26,13 +27,13 @@ object UpdateManager {
                 val tagName = json.getString("tag_name").replace("v", "", ignoreCase = true)
                 val body = json.getString("body")
 
-                // --- 在这里获取本地版本号 ---
+                // --- 获取本地版本号 ---
                 val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
                 val localVersion = pInfo.versionName ?: ""
 
                 val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
                 val ignored = prefs.getString(KEY_IGNORED_VERSION, "")
-                val isNewVersion = (tagName != localVersion) && (tagName != ignored)
+                val isNewVersion = (tagName != localVersion) && (isManual || tagName != ignored)
 
                 Handler(Looper.getMainLooper()).post {
                     if (isNewVersion) {
@@ -53,6 +54,6 @@ object UpdateManager {
     // 忽略特定版本
     fun ignoreVersion(context: Context, version: String) {
         context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
-            .edit().putString(KEY_IGNORED_VERSION, version).apply()
+            .edit { putString(KEY_IGNORED_VERSION, version) }
     }
 }

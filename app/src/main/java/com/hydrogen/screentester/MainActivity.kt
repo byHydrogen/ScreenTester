@@ -76,14 +76,12 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.ui.platform.LocalDensity
-import com.hydrogen.screentester.GlobalUpdateState.checkButtonText
 
 // ======== 更新状态 ========
 object GlobalUpdateState {
     var hasNewVersion by mutableStateOf(false)
     var latestVersionName by mutableStateOf("")
     var latestChangelog by mutableStateOf("")
-    var checkButtonText by mutableStateOf("检查更新")
 }
 
 class MainActivity : ComponentActivity() {
@@ -1831,6 +1829,7 @@ fun AboutPage() {
     val scrollState = rememberScrollState()
     val marketName = remember { DeviceUtils.getMarketName() }
     val view = LocalView.current
+    val scope = rememberCoroutineScope()
 
     val backgroundBrush = if (isDark) {
         Brush.linearGradient(
@@ -1868,6 +1867,8 @@ fun AboutPage() {
     var hasNewVersion by GlobalUpdateState::hasNewVersion
     var latestVersionName by GlobalUpdateState::latestVersionName
     var latestChangelog by GlobalUpdateState::latestChangelog
+    var checkButtonText by remember { mutableStateOf("检测更新") }
+
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(backgroundBrush)) {
         val screenHeight = this.maxHeight
         val context = LocalContext.current
@@ -2097,7 +2098,7 @@ fun AboutPage() {
                                     }
                                 }
 
-                                // 原有的当前版本信息
+                                // 当前版本信息
                                 Text(text = "版本 1.2.9.1", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary)
                                 Spacer(Modifier.height(6.dp))
                                 Text(
@@ -2125,9 +2126,21 @@ fun AboutPage() {
                                                         checkButtonText = "发现新版本"
                                                     } else {
                                                         checkButtonText = "已是最新版本"
+                                                        scope.launch {
+                                                            delay(2000)
+                                                            if (checkButtonText == "已是最新版本") {
+                                                                checkButtonText = "检测更新"
+                                                            }
+                                                        }
                                                     }
                                                 } else {
                                                     checkButtonText = "已是最新版本"
+                                                    scope.launch {
+                                                        delay(2000)
+                                                        if (checkButtonText == "已是最新版本") {
+                                                            checkButtonText = "检测更新"
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
@@ -2139,12 +2152,34 @@ fun AboutPage() {
                                         contentColor = MaterialTheme.colorScheme.onSecondaryContainer
                                     )
                                 ) {
-                                    if (isCheckingUpdate) {
-                                        androidx.compose.material3.CircularProgressIndicator(modifier = Modifier.size(18.dp), color = MaterialTheme.colorScheme.onSecondaryContainer, strokeWidth = 2.dp)
-                                        Spacer(Modifier.width(8.dp))
-                                        Text(checkButtonText, fontWeight = FontWeight.Bold)
-                                    } else {
-                                        Text(text = checkButtonText, fontWeight = FontWeight.Bold)
+                                    AnimatedContent(
+                                        targetState = checkButtonText,
+                                        transitionSpec = {
+                                            val enter = slideInVertically(
+                                                initialOffsetY = { it },
+                                                animationSpec = tween(durationMillis = 300)
+                                            ) + fadeIn(animationSpec = tween(300))
+
+                                            val exit = slideOutVertically(
+                                                targetOffsetY = { -it },
+                                                animationSpec = tween(durationMillis = 300)
+                                            ) + fadeOut(animationSpec = tween(300))
+
+                                            enter togetherWith exit
+                                        },
+                                        label = "UpdateButtonTextAnimation"
+                                    ) { currentText ->
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            if (currentText == "正在检查...") {
+                                                CircularProgressIndicator(
+                                                    modifier = Modifier.size(18.dp),
+                                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                                    strokeWidth = 2.dp
+                                                )
+                                                Spacer(Modifier.width(8.dp))
+                                            }
+                                            Text(text = currentText, fontWeight = FontWeight.Bold)
+                                        }
                                     }
                                 }
 
