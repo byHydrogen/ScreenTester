@@ -3,10 +3,11 @@ package com.hydrogen.screentester
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
-import android.os.Build
+import android.graphics.Shader
 import android.util.AttributeSet
 import android.view.HapticFeedbackConstants
 import android.view.RoundedCorner
@@ -33,6 +34,14 @@ class TestFrameView @JvmOverloads constructor(
     // 用于检测外部“切换圆角模式”按钮引发的状态变更
     private var lastUseCustomRadius: Boolean? = null
 
+    // === Shader 缓存相关变量 ===
+    private var currentGradientShader: Shader? = null
+    private var lastWidth: Int = 0
+    private var lastHeight: Int = 0
+    private var lastMultiColorMode: Boolean = false
+    private var lastSelectedColors: List<Int> = emptyList()
+    private var lastSegmentLength: Float = -1f
+
     // 记录倒计时秒数
     var remainingSeconds: Int = 0
         set(value) {
@@ -57,6 +66,52 @@ class TestFrameView @JvmOverloads constructor(
             invalidate()
         }
 
+    // 检查并更新渐变 Shader，只有在需要时才重新分配内存
+    private fun updateGradientShaderIfNeeded() {
+        val currentMultiColorMode = ThemeSettings.isMultiColorMode
+        val currentSelectedColors = ThemeSettings.multiColorSelectedColors
+        val currentSegmentLength = ThemeSettings.multiColorSegmentLength
+
+        // 检查是否需要更新（尺寸变化、模式变化、颜色配置变化）
+        val needUpdate = lastWidth != width || lastHeight != height ||
+                lastMultiColorMode != currentMultiColorMode ||
+                lastSegmentLength != currentSegmentLength ||
+                lastSelectedColors != currentSelectedColors
+
+        if (!needUpdate) return
+
+        // 记录当前状态
+        lastWidth = width
+        lastHeight = height
+        lastMultiColorMode = currentMultiColorMode
+        lastSegmentLength = currentSegmentLength
+        lastSelectedColors = currentSelectedColors.toList() // 复制一份，防止外部修改引用
+
+        if (currentMultiColorMode && currentSelectedColors.size >= 2 && width > 0 && height > 0) {
+            val segmentLength = if (currentSegmentLength == 0f) 1.0f else currentSegmentLength
+            val totalLength = width.coerceAtLeast(height)
+            val repeatCount = (totalLength / (segmentLength * 200)).toInt().coerceAtLeast(1)
+            val colors = mutableListOf<Int>()
+            val positions = mutableListOf<Float>()
+
+            for (i in 0 until repeatCount) {
+                for ((index, color) in currentSelectedColors.withIndex()) {
+                    colors.add(color)
+                    positions.add((i * currentSelectedColors.size + index).toFloat() / (repeatCount * currentSelectedColors.size))
+                }
+            }
+            colors.add(currentSelectedColors.last())
+            positions.add(1.0f)
+
+            currentGradientShader = LinearGradient(
+                0f, 0f, width.toFloat(), height.toFloat(),
+                colors.toIntArray(), positions.toFloatArray(), Shader.TileMode.REPEAT
+            )
+        } else {
+            currentGradientShader = null
+        }
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         canvas.drawColor(Color.BLACK) // 背景涂黑
@@ -69,8 +124,17 @@ class TestFrameView @JvmOverloads constructor(
         }
         lastUseCustomRadius = currentCustomRadius
 
-        // 动态读取设置里的颜色
-        linePaint.color = ThemeSettings.testLineColor
+        // 动态检查并更新 Shader (避免每帧创建对象)
+        updateGradientShaderIfNeeded()
+
+        // 应用颜色或 Shader
+        if (ThemeSettings.isMultiColorMode && ThemeSettings.multiColorSelectedColors.size >= 2) {
+            linePaint.shader = currentGradientShader
+            linePaint.color = Color.WHITE
+        } else {
+            linePaint.shader = null
+            linePaint.color = ThemeSettings.testLineColor
+        }
 
         if (isAdvancedMode) {
             drawAdvancedMode(canvas)
@@ -149,6 +213,9 @@ class TestFrameView @JvmOverloads constructor(
                     val g2Prefix = if (isG2Enabled) "G2平滑 | " else ""
                     val radiusDetails = "$g2Prefix${tl.toInt()} px"
                     canvas.drawText("圆角半径(手动校准): $radiusDetails | 线条粗细: ${String.format("%.1f", currentThickness)} px", centerX, h - 120f, textPaint)
+
+                    textPaint.alpha = 75
+                    canvas.drawText("@byHydrogen", centerX, h - 80f, textPaint)
                 } else {
                     val lineSpacing = 42f
                     val startY = h - 170f
@@ -164,14 +231,14 @@ class TestFrameView @JvmOverloads constructor(
                     textPaint.alpha = 75
                     val line3 = "线条粗细: ${String.format("%.1f", currentThickness)} px"
                     canvas.drawText(line3, centerX, startY + lineSpacing * 2, textPaint)
+
+                    textPaint.alpha = 75
+                    canvas.drawText("@byHydrogen", centerX, startY + lineSpacing * 3, textPaint)
                 }
             }
         } else {
             val insets = rootWindowInsets
-            val topLeftCorner = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                insets?.getRoundedCorner(RoundedCorner.POSITION_TOP_LEFT)
-            } else null
-            val systemR = topLeftCorner?.radius?.toFloat() ?: 100f
+            val systemR = insets?.getRoundedCorner(RoundedCorner.POSITION_TOP_LEFT)?.radius?.toFloat() ?: 100f
             canvas.drawRoundRect(rect, systemR, systemR, linePaint)
 
             // 精简模式下隐藏系统默认圆角半径参数文本
@@ -179,6 +246,11 @@ class TestFrameView @JvmOverloads constructor(
                 textPaint.textSize = 32f
                 textPaint.alpha = 100
                 canvas.drawText("圆角半径(系统默认): ${systemR.toInt()} px | 线条粗细: ${String.format("%.1f", currentThickness)} px", centerX, h - 120f, textPaint)
+
+                textPaint.textSize = 32f
+                textPaint.isFakeBoldText = false
+                textPaint.alpha = 100
+                canvas.drawText("@byHydrogen", centerX, h - 80f, textPaint)
             }
         }
 
@@ -206,6 +278,11 @@ class TestFrameView @JvmOverloads constructor(
                 val fadeProgress = if (countdownStartTime > 0L) (elapsed.toFloat() / animDuration).coerceIn(0f, 1f) else 1f
                 textPaint.alpha = (140 * fadeProgress).toInt()
                 canvas.drawText("请继续按住 $remainingSeconds 秒...", centerX, centerY + 140f, textPaint)
+                textPaint.alpha = (140 * (1f - fadeProgress)).toInt()
+                canvas.drawText("@byHydrogen", centerX, centerY + 140f, textPaint)
+            } else {
+                textPaint.alpha = 140
+                canvas.drawText("@byHydrogen", centerX, centerY + 140f, textPaint)
             }
         } else {
             if (remainingSeconds > 0) {
@@ -316,5 +393,10 @@ class TestFrameView @JvmOverloads constructor(
             canvas.drawText("退出倒计时: $remainingSeconds 秒", centerX, h - 80f, textPaint)
             textPaint.alpha = 255
         }
+
+        textPaint.textSize = 32f
+        textPaint.isFakeBoldText = false
+        textPaint.alpha = 100
+        canvas.drawText("@byHydrogen", centerX, h - 30f, textPaint)
     }
 }

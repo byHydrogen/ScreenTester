@@ -9,6 +9,15 @@ import androidx.compose.runtime.setValue
 
 enum class DarkModeConfig { FOLLOW_SYSTEM, LIGHT, DARK }
 
+// 预设方案枚举
+enum class PresetScheme {
+    RAINBOW,      // 彩虹色
+    WARM,         // 暖色
+    COOL,         // 冷色
+    HIGH_CONTRAST, // 高对比
+    MONET         // 莫奈色
+}
+
 object ThemeSettings {
     var darkModeState by mutableStateOf(DarkModeConfig.FOLLOW_SYSTEM)
     var testLineColor by mutableIntStateOf(android.graphics.Color.WHITE)
@@ -28,6 +37,14 @@ object ThemeSettings {
 
     // 精简黑边遮挡测试页文字开关状态
     var isCompactModeEnabled by mutableStateOf(false)
+
+    // 主页测试项视图模式：true=网格模式，false=列表模式
+    var isGridView by mutableStateOf(false)
+
+    // 渐变色条模式状态
+    var isMultiColorMode by mutableStateOf(false)
+    var multiColorSelectedColors by mutableStateOf<List<Int>>(emptyList()) // 勾选的颜色（最多8个）
+    var multiColorSegmentLength by mutableFloatStateOf(0f) // 渐变颜色长度（0表示使用默认中间值）
 
     fun saveConfig(context: Context, config: DarkModeConfig) {
         darkModeState = config
@@ -64,6 +81,79 @@ object ThemeSettings {
     fun saveCompactModeConfig(context: Context, enabled: Boolean) {
         isCompactModeEnabled = enabled
         context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putBoolean("is_compact_mode_enabled", enabled).apply()
+    }
+
+    // 保存视图模式设置
+    fun saveGridViewConfig(context: Context, enabled: Boolean) {
+        isGridView = enabled
+        context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putBoolean("is_grid_view", enabled).apply()
+    }
+
+    // 保存渐变色条模式开关
+    fun saveMultiColorMode(context: Context, enabled: Boolean) {
+        isMultiColorMode = enabled
+        context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putBoolean("is_multi_color_mode", enabled).apply()
+    }
+
+    // 保存渐变色条模式勾选的颜色
+    fun saveMultiColorSelectedColors(context: Context, colors: List<Int>) {
+        multiColorSelectedColors = colors
+        context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit()
+            .putString("multi_color_selected", colors.joinToString(","))
+            .apply()
+    }
+
+    // 保存渐变颜色长度
+    fun saveMultiColorSegmentLength(context: Context, length: Float) {
+        multiColorSegmentLength = length
+        context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit()
+            .putFloat("multi_color_segment_length", length)
+            .apply()
+    }
+
+    // 应用预设方案
+    fun applyPresetScheme(context: Context, scheme: PresetScheme) {
+        val colors = when (scheme) {
+            PresetScheme.RAINBOW -> listOf(
+                android.graphics.Color.RED,
+                android.graphics.Color.rgb(255, 165, 0), // 橙
+                android.graphics.Color.YELLOW,
+                android.graphics.Color.GREEN,
+                android.graphics.Color.BLUE,
+                android.graphics.Color.rgb(75, 0, 130), // 靛
+                android.graphics.Color.rgb(139, 0, 255)  // 紫
+            )
+            PresetScheme.WARM -> listOf(
+                android.graphics.Color.RED,
+                android.graphics.Color.rgb(255, 165, 0), // 橙
+                android.graphics.Color.YELLOW
+            )
+            PresetScheme.COOL -> listOf(
+                android.graphics.Color.BLUE,
+                android.graphics.Color.GREEN,
+                android.graphics.Color.rgb(139, 0, 255)  // 紫
+            )
+            PresetScheme.HIGH_CONTRAST -> listOf(
+                android.graphics.Color.RED,
+                android.graphics.Color.GREEN,
+                android.graphics.Color.BLUE
+            )
+            PresetScheme.MONET -> listOf(
+                -7981735, // Primary
+                -1845525, // Secondary
+                -1254181, // PrimaryContainer
+                -1845525, // TertiaryContainer
+                -5431481  // Error
+            )
+        }
+
+        // 设置勾选状态（最多8个）
+        multiColorSelectedColors = colors.take(8)
+        saveMultiColorSelectedColors(context, multiColorSelectedColors)
+
+        // 重置渐变颜色长度为默认值（0表示使用默认中间值）
+        multiColorSegmentLength = 0f
+        saveMultiColorSegmentLength(context, 0f)
     }
 
     fun addUserPreset(context: Context, color: Int) {
@@ -110,6 +200,19 @@ object ThemeSettings {
         // 读取精简黑边遮挡测试页文字设置
         isCompactModeEnabled = prefs.getBoolean("is_compact_mode_enabled", false)
 
+        // 读取视图模式设置
+        isGridView = prefs.getBoolean("is_grid_view", false)
+
+        // 读取渐变色条模式设置
+        isMultiColorMode = prefs.getBoolean("is_multi_color_mode", false)
+        val selectedStr = prefs.getString("multi_color_selected", null)
+        if (selectedStr != null && selectedStr.isNotEmpty()) {
+            multiColorSelectedColors = selectedStr.split(",").mapNotNull { it.toIntOrNull() }
+        }
+
+        // 读取渐变颜色长度（0表示使用默认中间值）
+        multiColorSegmentLength = prefs.getFloat("multi_color_segment_length", 0f)
+
         // 读取外观设置
         val savedDark = prefs.getString("dark_mode", DarkModeConfig.FOLLOW_SYSTEM.name)
         darkModeState = try { DarkModeConfig.valueOf(savedDark ?: DarkModeConfig.FOLLOW_SYSTEM.name) } catch (e: Exception) { DarkModeConfig.FOLLOW_SYSTEM }
@@ -155,13 +258,9 @@ object ThemeSettings {
         // 1. 低内存设备（Low RAM），默认关闭动画
         if (am.isLowRamDevice) return false
 
-        // 2. Android 12 (API 31) 以上利用 Performance Class 辨别性能层级
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-            if (android.os.Build.VERSION.MEDIA_PERFORMANCE_CLASS < android.os.Build.VERSION_CODES.S) {
-                return false
-            }
-        } else {
-            // 3. 针对老旧设备的兜底策略：若 CPU 核心数 < 4 或 总可用内存 < 4GB，默认关闭
+        // 2. 利用 Performance Class 辨别性能层级（minSdk=31，无需版本判断）
+        //    若设备不支持 Performance Class，则用 CPU 核心数和内存兜底判断
+        if (android.os.Build.VERSION.MEDIA_PERFORMANCE_CLASS < android.os.Build.VERSION_CODES.S) {
             val info = android.app.ActivityManager.MemoryInfo()
             am.getMemoryInfo(info)
             val totalRamGb = info.totalMem / (1024 * 1024 * 1024f)

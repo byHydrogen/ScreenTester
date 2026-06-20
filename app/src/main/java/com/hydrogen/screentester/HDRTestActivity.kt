@@ -140,7 +140,6 @@ fun HDRTestScreen(isDarkTheme: Boolean, onExit: () -> Unit) {
     var isHDRActivated by remember { mutableStateOf(false) }
     var hasStartedTesting by remember { mutableStateOf(false) }
     var currentHDRRatio by remember { mutableFloatStateOf(1.0f) }
-
     var bgTransitionReady by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -156,7 +155,7 @@ fun HDRTestScreen(isDarkTheme: Boolean, onExit: () -> Unit) {
             } else {
                 ActivityInfo.COLOR_MODE_DEFAULT
             }
-            activity.window.attributes = activity.window.attributes.apply {}
+            activity.window.attributes = activity.window.attributes
         }
 
         if (isHDRActivated) {
@@ -236,7 +235,7 @@ fun HDRTestScreen(isDarkTheme: Boolean, onExit: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 val targetRefBgColor = if (isHDRActivated) {
-                    if (isDarkTheme) Color.Black else Color.White
+                    Color.White
                 } else {
                     Color.Gray.copy(alpha = 0.2f)
                 }
@@ -271,11 +270,16 @@ fun HDRTestScreen(isDarkTheme: Boolean, onExit: () -> Unit) {
                                 .clip(SmoothCornerShape(16.dp))
                                 .background(animatedRefBgColor)
                         ) {
+                            val sdrTextColor by animateColorAsState(
+                                targetValue = if (isHDRActivated) Color.Gray else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                animationSpec = tween(300),
+                                label = "sdrTextColor"
+                            )
                             Text(
                                 text = "普通动态范围\n标准亮度",
                                 modifier = Modifier.align(Alignment.Center),
                                 textAlign = TextAlign.Center,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                color = sdrTextColor
                             )
                         }
 
@@ -309,7 +313,7 @@ fun HDRTestScreen(isDarkTheme: Boolean, onExit: () -> Unit) {
                 }
 
                 val targetBgColor = if (isHDRActivated) {
-                    if (isDarkTheme) Color.Black else Color.White
+                    Color.White
                 } else {
                     MaterialTheme.colorScheme.surfaceVariant
                 }
@@ -383,9 +387,22 @@ fun HDRTestScreen(isDarkTheme: Boolean, onExit: () -> Unit) {
                                     Spacer(modifier = Modifier.height(24.dp))
                                 }
 
-                                RenderHDRDisplayParameters(activity, currentHDRRatio, isDarkTheme)
+                                RenderHDRDisplayParameters(activity, currentHDRRatio, isDarkTheme, isHDRActivated)
                             }
                         }
+
+                        // HDR 激活时背景为白色，按钮用浅色莫奈取色
+                        val lightColorScheme = remember { dynamicLightColorScheme(context) }
+                        val animatedContainerColor by animateColorAsState(
+                            targetValue = if (isHDRActivated) lightColorScheme.secondaryContainer else MaterialTheme.colorScheme.secondaryContainer,
+                            animationSpec = tween(300),
+                            label = "btnContainer"
+                        )
+                        val animatedContentColor by animateColorAsState(
+                            targetValue = if (isHDRActivated) lightColorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSecondaryContainer,
+                            animationSpec = tween(300),
+                            label = "btnContent"
+                        )
 
                         FilledTonalButton(
                             onClick = {
@@ -398,7 +415,11 @@ fun HDRTestScreen(isDarkTheme: Boolean, onExit: () -> Unit) {
                                 }
                             },
                             modifier = Modifier.align(BiasAlignment(horizontalBias = 0f, verticalBias = buttonBias)),
-                            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp)
+                            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = animatedContainerColor,
+                                contentColor = animatedContentColor
+                            )
                         ) {
                             if (!hasStartedTesting) {
                                 Icon(Icons.Default.PlayArrow, contentDescription = null)
@@ -470,7 +491,7 @@ fun RenderHardwareParameters(activity: Activity?, isDarkTheme: Boolean) {
 
 @Suppress("DEPRECATION")
 @Composable
-fun RenderHDRDisplayParameters(activity: Activity?, currentRatio: Float, isDarkTheme: Boolean) {
+fun RenderHDRDisplayParameters(activity: Activity?, currentRatio: Float, isDarkTheme: Boolean, isHDRActivated: Boolean) {
     val display = activity?.display ?: return
 
     val currentModeStr = when (activity.window.colorMode) {
@@ -493,8 +514,11 @@ fun RenderHDRDisplayParameters(activity: Activity?, currentRatio: Float, isDarkT
         }
     }
 
-    val contentColor = if (isDarkTheme) Color.LightGray else Color.DarkGray
-    val descColor = Color.Gray
+    // HDR 激活时背景为白色用深色文字，关闭时跟随深色模式
+    val targetContentColor = if (isHDRActivated) Color.DarkGray else if (isDarkTheme) Color.LightGray else Color.DarkGray
+    val targetDescColor = if (isHDRActivated) Color.Gray else Color.Gray
+    val contentColor by animateColorAsState(targetValue = targetContentColor, animationSpec = tween(300), label = "hdrContentColor")
+    val descColor by animateColorAsState(targetValue = targetDescColor, animationSpec = tween(300), label = "hdrDescColor")
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,

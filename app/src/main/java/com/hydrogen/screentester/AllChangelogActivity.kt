@@ -58,15 +58,20 @@ data class LogLineItem(val tag: String?, val mainText: String, val subText: Stri
 fun AllChangelogScreen(isDark: Boolean, onBack: () -> Unit) {
     val view = LocalView.current
     val context = LocalContext.current
+
+    val currentVersionName = remember {
+        try {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: ""
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
     val systemMonetPrimary = remember(isDark) {
         if (isDark) dynamicDarkColorScheme(context).primary else dynamicLightColorScheme(context).primary
     }
 
-    val backgroundBrush = if (isDark) {
-        Brush.linearGradient(colors = listOf(Color(0xFF1E172B), Color(0xFF2D1929), Color(0xFF161E2E)))
-    } else {
-        Brush.linearGradient(colors = listOf(Color(0xFFFDE8E9), Color(0xFFE3E1FB), Color(0xFFD6E3F9)))
-    }
+    val backgroundBrush = DeviceUtils.backgroundBrush(isDark)
 
     val cardG2Shape = remember {
         object : androidx.compose.ui.graphics.Shape {
@@ -84,6 +89,7 @@ fun AllChangelogScreen(isDark: Boolean, onBack: () -> Unit) {
 
     val changelogs = remember {
         listOf(
+            "2.0" to "新增 OOBE 开箱体验\n新增 主页 网格视图\n新增 主页 发现新版本横幅 及 更新弹窗卡片\n新增 设置页 渐变色条设置项\n新增 关于页 支持开发者卡片\n 新增 关于页 致谢卡片\n新增 赞赏开发者页面\n新增 黑边遮挡测试 支持显示渐变色条\n新增 主页 搜索栏搜索无结果提示\n新增 关于页更新日志卡片 检查更新失败提示\n修复 部分设备机型宣传名读取失败的问题\n修复 多指触控检测 状态栏及导航条未隐藏的问题\n修复 了一些已知问题\n优化 关于页 莫奈取色为黄绿/红橙棕下的背景混色\n优化 历史更新日志页 莫奈取色为黄绿/红橙棕下的背景混色\n优化 关于页 下半部分卡片淡入淡出动画\n优化 应用 流畅度",
             "1.2.9.1" to "新增 关于页 开源项目地址卡片\n新增 关于页 更新日志板块\n新增 关于页 检查更新按钮\n优化 主页 顶部渐变效果\n优化 设置页 顶部渐变效果",
             "1.2.9" to "新增 设置页 卡片高级动效开关\n（开启后卡片有淡入动效，高性能设备默认开启，低性能设备默认关闭）\n新增 设置页 纯净模式开关\n（开启后将隐藏测试页圆角模式中部部分文案和底部参数，并隐藏右上角切换按钮，改为双击屏幕任意位置切换模式）\n调整 设置页 卡片\n（将精准圆角校准卡片 改为 自定义黑边遮挡测试）\n修复 了一些已知问题",
             "1.2.8" to "新增 屏幕 HDR 检测\n优化 设置页 卡片圆角\n新增 设置页 卡片淡入动效\n新增 设置页 卡片展开/折叠时的箭头旋转动效\n优化 黑边遮挡测试 文案（按返回键返回 → 按返回键）",
@@ -111,7 +117,7 @@ fun AllChangelogScreen(isDark: Boolean, onBack: () -> Unit) {
     ) {
         Scaffold(
             topBar = {
-                val startColor = if (isDark) Color(0xFF1E172B) else Color(0xFFFDE8E9)
+                val startColor = DeviceUtils.backgroundBaseColor(isDark)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -155,11 +161,7 @@ fun AllChangelogScreen(isDark: Boolean, onBack: () -> Unit) {
                     val isItemExpanded = expandedVersions.contains(version)
                     val arrowRotation by animateFloatAsState(targetValue = if (isItemExpanded) 180f else 0f, label = "arrow")
 
-                    val cardContainerColor = if (isDark) {
-                        Color(0xFF241E30).copy(alpha = 0.75f)
-                    } else {
-                        MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)
-                    }
+                    val cardContainerColor = DeviceUtils.cardContainerColor(isDark)
                     val cardBorderColor = if (isDark) Color.White.copy(alpha = 0.12f) else Color.Transparent
 
                     Card(
@@ -184,7 +186,7 @@ fun AllChangelogScreen(isDark: Boolean, onBack: () -> Unit) {
                                     modifier = Modifier.weight(1f),
                                     fontSize = 16.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (version == "1.2.9.1") systemMonetPrimary else MaterialTheme.colorScheme.onSurface
+                                    color = if (version == currentVersionName) systemMonetPrimary else MaterialTheme.colorScheme.onSurface
                                 )
                                 Icon(
                                     imageVector = Icons.Default.KeyboardArrowDown,

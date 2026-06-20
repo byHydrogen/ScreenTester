@@ -13,7 +13,27 @@ object UpdateManager {
     private const val PREF_NAME = "app_update_prefs"
     private const val KEY_IGNORED_VERSION = "ignored_version"
 
-    fun checkUpdate(context: Context, isManual: Boolean = false, onResult: (Boolean, String?, String?) -> Unit) {
+    // 版本比较函数
+    private fun isVersionGreater(remoteVersion: String, localVersion: String): Boolean {
+        val remoteParts = remoteVersion.split(".").map { it.toIntOrNull() ?: 0 }
+        val localParts = localVersion.split(".").map { it.toIntOrNull() ?: 0 }
+        val length = maxOf(remoteParts.size, localParts.size)
+
+        for (i in 0 until length) {
+            val r = remoteParts.getOrElse(i) { 0 }
+            val l = localParts.getOrElse(i) { 0 }
+            if (r > l) return true
+            if (r < l) return false
+        }
+        return false
+    }
+
+    fun checkUpdate(
+        context: Context,
+        isManual: Boolean = false,
+        onResult: (Boolean, String?, String?) -> Unit,
+        onError: (() -> Unit)? = null
+    ) {
         thread {
             try {
                 val url = URL("https://api.github.com/repos/byHydrogen/ScreenTester/releases/latest")
@@ -33,7 +53,8 @@ object UpdateManager {
 
                 val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
                 val ignored = prefs.getString(KEY_IGNORED_VERSION, "")
-                val isNewVersion = (tagName != localVersion) && (isManual || tagName != ignored)
+                // 使用版本比较：只有远程版本更高时才显示更新
+                val isNewVersion = isVersionGreater(tagName, localVersion) && (isManual || tagName != ignored)
 
                 Handler(Looper.getMainLooper()).post {
                     if (isNewVersion) {
@@ -45,7 +66,11 @@ object UpdateManager {
             } catch (e: Exception) {
                 e.printStackTrace()
                 Handler(Looper.getMainLooper()).post {
-                    onResult(false, null, null)
+                    if (onError != null) {
+                        onError()
+                    } else {
+                        onResult(false, null, null)
+                    }
                 }
             }
         }

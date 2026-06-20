@@ -1,7 +1,6 @@
 package com.hydrogen.screentester
 
 import android.app.Activity
-import android.os.Build
 import android.os.Bundle
 import android.view.HapticFeedbackConstants
 import android.view.RoundedCorner
@@ -17,7 +16,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -47,7 +45,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
@@ -113,9 +110,7 @@ fun CalibrationScreen(onExit: () -> Unit) {
     val prefs = remember { context.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE) }
 
     val insets = LocalView.current.rootWindowInsets
-    val systemRadius = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        insets?.getRoundedCorner(RoundedCorner.POSITION_TOP_LEFT)?.radius?.toFloat() ?: 100f
-    } else { 100f }
+    val systemRadius = insets?.getRoundedCorner(RoundedCorner.POSITION_TOP_LEFT)?.radius?.toFloat() ?: 100f
 
     val tlAnim = remember { Animatable(if (ThemeSettings.radiusTL < 0f) systemRadius else ThemeSettings.radiusTL) }
     val trAnim = remember { Animatable(if (ThemeSettings.radiusTR < 0f) systemRadius else ThemeSettings.radiusTR) }

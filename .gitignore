@@ -13,4 +13,15 @@
 .externalNativeBuild
 .cxx
 local.properties
+*.jks
+*.keystore
+*.apk
+*.ap_
+*.dex
+*.class
+*.jar
+*.aar
+*.aab
 release/
+/debug/
+/captures/

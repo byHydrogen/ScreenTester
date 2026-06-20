@@ -3,6 +3,7 @@ package com.hydrogen.screentester
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -16,15 +17,20 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.material3.MaterialTheme
 import com.hydrogen.screentester.ui.theme.ScreenTesterTheme
 
 class MultiTouchActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            hide(WindowInsetsCompat.Type.systemBars())
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
 
         if (ThemeSettings.isMaxBrightnessEnabled) {
             val lp = window.attributes
@@ -66,7 +72,7 @@ class MultiTouchActivity : ComponentActivity() {
                         }
                     }
 
-                    // --- 字号的文字显示部分 ---
+                    // 字号的文字显示部分
                     Column(
                         modifier = Modifier.align(Alignment.Center).padding(horizontal = 16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
@@ -80,10 +86,8 @@ class MultiTouchActivity : ComponentActivity() {
                         Text(
                             text = "支持最大触控点: $maxPointers",
                             color = monetPrimary,
-                            // 稍微缩放一点字号，并锁定物理大小
                             fontSize = with(density) { 34.dp.toSp() },
                             fontWeight = FontWeight.Black,
-                            // 添加居中和行高，即使在极窄屏幕上换行，也绝不会重叠错位
                             textAlign = TextAlign.Center,
                             lineHeight = with(density) { 44.dp.toSp() }
                         )
