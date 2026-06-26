@@ -14,7 +14,7 @@ object UpdateManager {
     private const val KEY_IGNORED_VERSION = "ignored_version"
 
     // 版本比较函数
-    private fun isVersionGreater(remoteVersion: String, localVersion: String): Boolean {
+    fun isVersionGreater(remoteVersion: String, localVersion: String): Boolean {
         val remoteParts = remoteVersion.split(".").map { it.toIntOrNull() ?: 0 }
         val localParts = localVersion.split(".").map { it.toIntOrNull() ?: 0 }
         val length = maxOf(remoteParts.size, localParts.size)

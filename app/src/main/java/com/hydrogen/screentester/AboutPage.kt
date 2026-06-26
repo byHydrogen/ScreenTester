@@ -19,6 +19,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
@@ -27,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AboutPage() {
     val isDark = when (ThemeSettings.darkModeState) {
@@ -56,6 +58,7 @@ fun AboutPage() {
     var latestVersionName by GlobalUpdateState::latestVersionName
     var latestChangelog by GlobalUpdateState::latestChangelog
     var checkButtonText by remember { mutableStateOf("检测更新") }
+    var showLinkDialog by remember { mutableStateOf<String?>(null) }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(backgroundBrush)) {
         val screenHeight = this.maxHeight
@@ -152,6 +155,7 @@ fun AboutPage() {
 
             var devCardVisible by remember { mutableStateOf(false) }
             var donateCardVisible by remember { mutableStateOf(false) }
+            var qqCardVisible by remember { mutableStateOf(false) }
             var projCardVisible by remember { mutableStateOf(false) }
             var changelogCardVisible by remember { mutableStateOf(false) }
             var creditsCardVisible by remember { mutableStateOf(false) }
@@ -167,12 +171,16 @@ fun AboutPage() {
                 else if (scrollProgress <= 0.46f) creditsCardVisible = false
                 if (scrollProgress >= 0.68f) donateCardVisible = true
                 else if (scrollProgress <= 0.58f) donateCardVisible = false
+                if (scrollProgress >= 0.78f) qqCardVisible = true
+                else if (scrollProgress <= 0.68f) qqCardVisible = false
             }
 
             val devCardAlpha by animateFloatAsState(targetValue = if (devCardVisible) 1f else 0f, animationSpec = tween(400), label = "devCardAlpha")
             val devCardTransY by animateFloatAsState(targetValue = if (devCardVisible) 0f else 60f, animationSpec = tween(400), label = "devCardTransY")
             val donateCardAlpha by animateFloatAsState(targetValue = if (donateCardVisible) 1f else 0f, animationSpec = tween(400), label = "donateCardAlpha")
             val donateCardTransY by animateFloatAsState(targetValue = if (donateCardVisible) 0f else 60f, animationSpec = tween(400), label = "donateCardTransY")
+            val qqCardAlpha by animateFloatAsState(targetValue = if (qqCardVisible) 1f else 0f, animationSpec = tween(400), label = "qqCardAlpha")
+            val qqCardTransY by animateFloatAsState(targetValue = if (qqCardVisible) 0f else 60f, animationSpec = tween(400), label = "qqCardTransY")
             val projCardAlpha by animateFloatAsState(targetValue = if (projCardVisible) 1f else 0f, animationSpec = tween(400), label = "projCardAlpha")
             val projCardTransY by animateFloatAsState(targetValue = if (projCardVisible) 0f else 60f, animationSpec = tween(400), label = "projCardTransY")
             val changelogCardAlpha by animateFloatAsState(targetValue = if (changelogCardVisible) 1f else 0f, animationSpec = tween(400), label = "changelogCardAlpha")
@@ -238,7 +246,7 @@ fun AboutPage() {
                                 HorizontalDivider(modifier = Modifier.padding(bottom = 12.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
                                 val aboutButtonG2Shape = G2Shapes.aboutButton
 
-                                // === 版本更新卡片 ===
+                                // 版本更新卡片
                                 val newVersionCardShape = G2Shapes.newVersionCard
 
                                 AnimatedVisibility(visible = hasNewVersion) {
@@ -251,7 +259,7 @@ fun AboutPage() {
                                         Column(modifier = Modifier.padding(20.dp)) {
                                             Text(text = "发现新版本：$latestVersionName", fontWeight = FontWeight.Black, fontSize = 16.sp, color = MaterialTheme.colorScheme.primary)
                                             Spacer(Modifier.height(8.dp))
-                                            Text(text = latestChangelog, fontSize = 13.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            MarkdownText(text = latestChangelog, fontSize = 13.sp, lineHeight = 18.sp, textColor = MaterialTheme.colorScheme.onSurfaceVariant.toArgb(), linkColor = MaterialTheme.colorScheme.primary.toArgb(), onLinkClick = { showLinkDialog = it })
                                             Spacer(Modifier.height(16.dp))
 
                                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -281,10 +289,10 @@ fun AboutPage() {
                                 }
 
                                 // 当前版本信息
-                                Text(text = "版本 2.0", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary)
+                                Text(text = "版本 2.1", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary)
                                 Spacer(Modifier.height(6.dp))
                                 Text(
-                                    text = "新增 OOBE 开箱体验\n新增 主页 网格视图\n新增 主页 发现新版本横幅 及 更新弹窗卡片\n新增 设置页 渐变色条设置项\n新增 关于页 支持开发者卡片\n新增 关于页 致谢卡片\n新增 赞赏开发者页面\n新增 黑边遮挡测试 支持显示渐变色条\n新增 主页 搜索栏搜索无结果提示\n新增 关于页更新日志卡片 检查更新失败提示\n修复 部分设备机型宣传名读取失败的问题\n修复 多指触控检测 状态栏及导航条未隐藏的问题\n修复 了一些已知问题\n优化 关于页 莫奈取色为黄绿/红橙棕下的背景混色\n优化 历史更新日志页 莫奈取色为黄绿/红橙棕下的背景混色\n优化 关于页 下半部分卡片淡入淡出动画\n优化 应用 流畅度",
+                                    text = "新增 OOBE 圆角校准步骤 支持内嵌校准卡片（无需跳转校准车间）\n新增 主页 加入QQ交流群弹窗（仅弹一次）\n新增 关于页 加入QQ交流群卡片\n新增 校准车间页 +/- 按钮（点击后 ±0.1 ，长按可快速加减）\n新增 校准车间页 固定卡片功能（长按卡片可固定，固定后卡片不会被折叠，固定后点击/长按卡片标题栏可取消固定）\n新增 校准车间页 卡片展开/折叠时的箭头旋转动效\n优化 校准车间页 卡片圆角\n优化 屏幕灰阶测试 & 屏幕彩条测试 悬浮提示胶囊圆角\n优化 触控采样率测试 触控采样率算法\n优化 触控采样率测试 “稳定峰值”卡片圆角\n修复 自定义深/浅色模式下的状态栏反色问题\n修复 了一些已知问题",
                                     fontSize = 13.sp,
                                     lineHeight = 18.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -304,7 +312,7 @@ fun AboutPage() {
                                                 onResult = { hasUpdate, version, changelog ->
                                                     isCheckingUpdate = false
                                                     if (hasUpdate && version != null) {
-                                                        if (isVersionGreater(version, versionName)) {
+                                                        if (UpdateManager.isVersionGreater(version, versionName)) {
                                                             hasNewVersion = true
                                                             latestVersionName = version
                                                             latestChangelog = changelog ?: ""
@@ -550,8 +558,59 @@ fun AboutPage() {
                     }
                 }
 
+                // 加入QQ交流群卡片
+                Spacer(modifier = Modifier.height(16.dp))
+                Box(modifier = Modifier.graphicsLayer { alpha = qqCardAlpha; translationY = qqCardTransY.dp.toPx() }) {
+                    var showQQDialog by remember { mutableStateOf(false) }
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(cardG2Shape)
+                            .clickable {
+                                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                showQQDialog = true
+                            },
+                        shape = cardG2Shape,
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)),
+                        elevation = CardDefaults.cardElevation(0.dp),
+                        border = BorderStroke(1.dp, if (isDark) Color.White.copy(alpha = 0.15f) else Color.Transparent)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(20.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(imageVector = Icons.Default.QuestionAnswer, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text(
+                                text = "加入QQ交流群",
+                                modifier = Modifier.weight(1f),
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Black,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Icon(
+                                imageVector = Icons.Default.ChevronRight,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                    if (showQQDialog) {
+                        QQGroupDialog(onDismiss = { showQQDialog = false })
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(130.dp))
             }
+        }
+
+        // 链接确认弹窗
+        if (showLinkDialog != null) {
+            LinkConfirmDialog(
+                url = showLinkDialog ?: "",
+                onDismiss = { showLinkDialog = null }
+            )
         }
     }
 }
@@ -665,16 +724,3 @@ fun DeviceInfoItem(label: String, value: String) {
     }
 }
 
-fun isVersionGreater(remoteVersion: String, localVersion: String): Boolean {
-    val remoteParts = remoteVersion.split(".").map { it.toIntOrNull() ?: 0 }
-    val localParts = localVersion.split(".").map { it.toIntOrNull() ?: 0 }
-    val length = maxOf(remoteParts.size, localParts.size)
-
-    for (i in 0 until length) {
-        val r = remoteParts.getOrElse(i) { 0 }
-        val l = localParts.getOrElse(i) { 0 }
-        if (r > l) return true
-        if (r < l) return false
-    }
-    return false
-}

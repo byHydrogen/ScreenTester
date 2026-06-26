@@ -8,11 +8,13 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -22,9 +24,11 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,6 +40,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -51,10 +56,13 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
 class CornerCalibrationActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         WindowInsetsControllerCompat(window, window.decorView).apply {
@@ -131,6 +139,7 @@ fun CalibrationScreen(onExit: () -> Unit) {
     var isG2Enabled by remember { mutableStateOf(prefs.getBoolean("is_g2_enabled", false)) }
     var isLinked by remember { mutableStateOf(true) }
     var activeSection by remember { mutableStateOf<Int?>(0) }
+    var pinnedSections by remember { mutableStateOf(setOf<Int>()) }
 
     val sliderSpec = tween<Float>(durationMillis = 800, easing = FastOutSlowInEasing)
 
@@ -198,6 +207,7 @@ fun CalibrationScreen(onExit: () -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .imePadding()
                 .padding(horizontal = 24.dp, vertical = 32.dp),
             verticalArrangement = Arrangement.Bottom
         ) {
@@ -207,36 +217,6 @@ fun CalibrationScreen(onExit: () -> Unit) {
                     .padding(bottom = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                val g2TopButtonShape = remember {
-                    object : androidx.compose.ui.graphics.Shape {
-                        override fun createOutline(
-                            size: androidx.compose.ui.geometry.Size,
-                            layoutDirection: androidx.compose.ui.unit.LayoutDirection,
-                            density: androidx.compose.ui.unit.Density
-                        ): androidx.compose.ui.graphics.Outline {
-                            val path = Path()
-                            val w = size.width
-                            val h = size.height
-                            val targetRadius = with(density) { 16.dp.toPx() }
-                            val p = (1.4f * targetRadius).coerceAtMost(h / 2f)
-                            val safeRadius = p / 1.4f
-                            val c = 0.45f * safeRadius
-
-                            path.moveTo(p, 0f)
-                            path.lineTo(w - p, 0f)
-                            path.cubicTo(w - c, 0f, w, c, w, p)
-                            path.lineTo(w, h - p)
-                            path.cubicTo(w, h - c, w - c, h, w - p, h)
-                            path.lineTo(p, h)
-                            path.cubicTo(c, h, 0f, h - c, 0f, h - p)
-                            path.lineTo(0f, p)
-                            path.cubicTo(0f, c, c, 0f, p, 0f)
-                            path.close()
-                            return androidx.compose.ui.graphics.Outline.Generic(path)
-                        }
-                    }
-                }
-
                 FilledTonalButton(
                     onClick = {
                         isLinked = !isLinked
@@ -248,7 +228,7 @@ fun CalibrationScreen(onExit: () -> Unit) {
                             scope.launch { trYAnim.animateTo(tlYAnim.value, sliderSpec) }; scope.launch { blYAnim.animateTo(tlYAnim.value, sliderSpec) }; scope.launch { brYAnim.animateTo(tlYAnim.value, sliderSpec) }
                         }
                     },
-                    shape = g2TopButtonShape,
+                    shape = G2Shapes.gridCard,
                     modifier = Modifier
                         .weight(1.2f)
                         .height(44.dp)
@@ -270,7 +250,7 @@ fun CalibrationScreen(onExit: () -> Unit) {
                         isG2Enabled = !isG2Enabled
                         view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                     },
-                    shape = g2TopButtonShape,
+                    shape = G2Shapes.gridCard,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = g2ButtonContainerColor,
                         contentColor = g2ButtonContentColor
@@ -291,21 +271,60 @@ fun CalibrationScreen(onExit: () -> Unit) {
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                SectionCard("基础圆角半径", activeSection == 0, {
-                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); activeSection = if (activeSection == 0) null else 0
-                }) {
+                SectionCard(
+                    title = "基础圆角半径",
+                    isExpanded = activeSection == 0 || 0 in pinnedSections,
+                    isPinned = 0 in pinnedSections,
+                    onClick = {
+                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        if (0 in pinnedSections) {
+                            pinnedSections = pinnedSections - 0
+                        } else if (activeSection == 0) {
+                            activeSection = null
+                        } else {
+                            activeSection = 0
+                        }
+                    },
+                    onLongClick = { pinnedSections = if (0 in pinnedSections) pinnedSections - 0 else pinnedSections + 0 }
+                ) {
                     CalibrationSliderGroup(isLinked, tlAnim, trAnim, blAnim, brAnim, systemRadius, sliderSpec, 0f..300f, scope)
                 }
 
-                SectionCard("横向 (X轴) 曲率修正", activeSection == 1, {
-                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); activeSection = if (activeSection == 1) null else 1
-                }) {
+                SectionCard(
+                    title = "横向 (X轴) 曲率修正",
+                    isExpanded = activeSection == 1 || 1 in pinnedSections,
+                    isPinned = 1 in pinnedSections,
+                    onClick = {
+                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        if (1 in pinnedSections) {
+                            pinnedSections = pinnedSections - 1
+                        } else if (activeSection == 1) {
+                            activeSection = null
+                        } else {
+                            activeSection = 1
+                        }
+                    },
+                    onLongClick = { pinnedSections = if (1 in pinnedSections) pinnedSections - 1 else pinnedSections + 1 }
+                ) {
                     CalibrationSliderGroup(isLinked, tlXAnim, trXAnim, blXAnim, brXAnim, 0f, sliderSpec, -150f..150f, scope)
                 }
 
-                SectionCard("纵向 (Y轴) 曲率修正", activeSection == 2, {
-                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); activeSection = if (activeSection == 2) null else 2
-                }) {
+                SectionCard(
+                    title = "纵向 (Y轴) 曲率修正",
+                    isExpanded = activeSection == 2 || 2 in pinnedSections,
+                    isPinned = 2 in pinnedSections,
+                    onClick = {
+                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        if (2 in pinnedSections) {
+                            pinnedSections = pinnedSections - 2
+                        } else if (activeSection == 2) {
+                            activeSection = null
+                        } else {
+                            activeSection = 2
+                        }
+                    },
+                    onLongClick = { pinnedSections = if (2 in pinnedSections) pinnedSections - 2 else pinnedSections + 2 }
+                ) {
                     CalibrationSliderGroup(isLinked, tlYAnim, trYAnim, blYAnim, brYAnim, 0f, sliderSpec, -150f..150f, scope)
                 }
             }
@@ -316,34 +335,6 @@ fun CalibrationScreen(onExit: () -> Unit) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                val bottomButtonG2Shape = remember {
-                    object : androidx.compose.ui.graphics.Shape {
-                        override fun createOutline(
-                            size: androidx.compose.ui.geometry.Size,
-                            layoutDirection: androidx.compose.ui.unit.LayoutDirection,
-                            density: androidx.compose.ui.unit.Density
-                        ): androidx.compose.ui.graphics.Outline {
-                            val path = Path()
-                            val w = size.width
-                            val h = size.height
-                            val radius = with(density) { 16.dp.toPx() }
-                            val p = 1.4f * radius
-                            val c = 0.45f * radius
-
-                            path.moveTo(p, 0f)
-                            path.lineTo(w - p, 0f)
-                            path.cubicTo(w - c, 0f, w, c, w, p)
-                            path.lineTo(w, h - p)
-                            path.cubicTo(w, h - c, w - c, h, w - p, h)
-                            path.lineTo(p, h)
-                            path.cubicTo(c, h, 0f, h - c, 0f, h - p)
-                            path.lineTo(0f, p)
-                            path.cubicTo(0f, c, c, 0f, p, 0f)
-                            path.close()
-                            return androidx.compose.ui.graphics.Outline.Generic(path)
-                        }
-                    }
-                }
 
                 FilledTonalButton(
                     onClick = {
@@ -353,7 +344,7 @@ fun CalibrationScreen(onExit: () -> Unit) {
                     modifier = Modifier
                         .weight(1f)
                         .height(52.dp),
-                    shape = bottomButtonG2Shape,
+                    shape = G2Shapes.gridCard,
                     colors = ButtonDefaults.filledTonalButtonColors(
                         containerColor = MaterialTheme.colorScheme.surfaceVariant,
                         contentColor = MaterialTheme.colorScheme.onSurfaceVariant
@@ -382,7 +373,7 @@ fun CalibrationScreen(onExit: () -> Unit) {
                     modifier = Modifier
                         .weight(1f)
                         .height(52.dp),
-                    shape = bottomButtonG2Shape,
+                    shape = G2Shapes.gridCard,
                     elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
                 ) { Text("保存并应用", fontWeight = FontWeight.Bold) }
             }
@@ -390,18 +381,30 @@ fun CalibrationScreen(onExit: () -> Unit) {
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun SectionCard(
     title: String,
     isExpanded: Boolean,
+    isPinned: Boolean = false,
     onClick: () -> Unit,
+    onLongClick: () -> Unit = {},
+    containerColor: Color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
     content: @Composable () -> Unit
 ) {
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (isExpanded) 180f else 0f,
+        label = "arrowRotation"
+    )
+    val pinAlpha by animateFloatAsState(
+        targetValue = if (isPinned) 1f else 0f,
+        label = "pinAlpha"
+    )
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
+        shape = G2Shapes.card,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            containerColor = containerColor
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
@@ -409,14 +412,25 @@ fun SectionCard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(onClick = onClick)
+                    .combinedClickable(onClick = onClick, onLongClick = onLongClick)
                     .padding(20.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(title, Modifier.weight(1f), fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                // 固定图标
                 Icon(
-                    imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                    contentDescription = null
+                    imageVector = Icons.Default.PushPin,
+                    contentDescription = "已固定",
+                    modifier = Modifier
+                        .size(18.dp)
+                        .graphicsLayer { alpha = pinAlpha },
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowDown,
+                    contentDescription = null,
+                    modifier = Modifier.graphicsLayer { rotationZ = arrowRotation }
                 )
             }
 
@@ -447,17 +461,17 @@ fun CalibrationSliderGroup(
     ) { linked ->
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (linked) {
-                CalibrationItem("同步调节", tl, defaultVal, sliderSpec, valueRange) { t, imm ->
+                CalibrationItem("同步调节", tl, defaultVal, valueRange) { t, imm ->
                     scope.launch {
                         if (imm) { tl.snapTo(t); tr.snapTo(t); bl.snapTo(t); br.snapTo(t) }
                         else { launch { tl.animateTo(t, sliderSpec) }; launch { tr.animateTo(t, sliderSpec) }; launch { bl.animateTo(t, sliderSpec) }; launch { br.animateTo(t, sliderSpec) } }
                     }
                 }
             } else {
-                CalibrationItem("左上角", tl, defaultVal, sliderSpec, valueRange) { t, imm -> scope.launch { if(imm) tl.snapTo(t) else tl.animateTo(t, sliderSpec) } }
-                CalibrationItem("右上角", tr, defaultVal, sliderSpec, valueRange) { t, imm -> scope.launch { if(imm) tr.snapTo(t) else tr.animateTo(t, sliderSpec) } }
-                CalibrationItem("左下角", bl, defaultVal, sliderSpec, valueRange) { t, imm -> scope.launch { if(imm) bl.snapTo(t) else bl.animateTo(t, sliderSpec) } }
-                CalibrationItem("右下角", br, defaultVal, sliderSpec, valueRange) { t, imm -> scope.launch { if(imm) br.snapTo(t) else br.animateTo(t, sliderSpec) } }
+                CalibrationItem("左上角", tl, defaultVal, valueRange) { t, imm -> scope.launch { if(imm) tl.snapTo(t) else tl.animateTo(t, sliderSpec) } }
+                CalibrationItem("右上角", tr, defaultVal, valueRange) { t, imm -> scope.launch { if(imm) tr.snapTo(t) else tr.animateTo(t, sliderSpec) } }
+                CalibrationItem("左下角", bl, defaultVal, valueRange) { t, imm -> scope.launch { if(imm) bl.snapTo(t) else bl.animateTo(t, sliderSpec) } }
+                CalibrationItem("右下角", br, defaultVal, valueRange) { t, imm -> scope.launch { if(imm) br.snapTo(t) else br.animateTo(t, sliderSpec) } }
             }
         }
     }
@@ -468,7 +482,6 @@ fun CalibrationItem(
     label: String,
     animatable: Animatable<Float, *>,
     systemDefault: Float,
-    sliderSpec: AnimationSpec<Float>,
     valueRange: ClosedFloatingPointRange<Float> = 0f..300f,
     onAnimate: (Float, Boolean) -> Unit
 ) {
@@ -493,35 +506,115 @@ fun CalibrationItem(
                 ) { Icon(Icons.Default.Refresh, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary) }
             }
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
-                    .padding(horizontal = 12.dp, vertical = 4.dp)
-            ) {
-                BasicTextField(
-                    value = displayValue,
-                    onValueChange = { newVal ->
-                        if (newVal.isEmpty() || newVal == "-" || newVal.matches(Regex("^-?\\d*\\.?\\d*$"))) {
-                            if (newVal.length <= 6) {
-                                typedText = newVal
-                                val num = newVal.toFloatOrNull() ?: 0f
-                                onAnimate(num.coerceIn(valueRange.start, valueRange.endInclusive), false)
-                            }
-                        }
-                    },
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // - 按钮
+                Box(
                     modifier = Modifier
-                        .width(64.dp)
-                        .onFocusChanged {
-                            isFocused = it.isFocused
-                            if (it.isFocused) typedText = String.format(java.util.Locale.US, "%.1f", animatable.value)
+                        .size(32.dp)
+                        .pointerInput(valueRange) {
+                            coroutineScope {
+                                var pressed = false
+                                launch {
+                                    detectTapGestures(
+                                        onPress = {
+                                            pressed = true
+                                            focusManager.clearFocus()
+                                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                            onAnimate((animatable.value - 0.1f).coerceIn(valueRange.start, valueRange.endInclusive), true)
+                                            tryAwaitRelease()
+                                            pressed = false
+                                        }
+                                    )
+                                }
+                                launch {
+                                    while (true) {
+                                        awaitPointerEventScope { awaitFirstDown(requireUnconsumed = false) }
+                                        kotlinx.coroutines.delay(500.milliseconds)
+                                        if (pressed) {
+                                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                            while (pressed) {
+                                                onAnimate((animatable.value - 0.1f).coerceIn(valueRange.start, valueRange.endInclusive), true)
+                                                view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                                                kotlinx.coroutines.delay(80.milliseconds)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         },
-                    textStyle = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary, textAlign = TextAlign.Center),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                    singleLine = true, cursorBrush = SolidColor(MaterialTheme.colorScheme.primary)
-                )
-                Text("px", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 2.dp))
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.Remove, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                ) {
+                    BasicTextField(
+                        value = displayValue,
+                        onValueChange = { newVal ->
+                            if (newVal.isEmpty() || newVal == "-" || newVal.matches(Regex("^-?\\d*\\.?\\d*$"))) {
+                                if (newVal.length <= 6) {
+                                    typedText = newVal
+                                    val num = newVal.toFloatOrNull() ?: 0f
+                                    onAnimate(num.coerceIn(valueRange.start, valueRange.endInclusive), false)
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .width(64.dp)
+                            .onFocusChanged {
+                                isFocused = it.isFocused
+                                if (it.isFocused) typedText = String.format(java.util.Locale.US, "%.1f", animatable.value)
+                            },
+                        textStyle = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary, textAlign = TextAlign.Center),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                        singleLine = true, cursorBrush = SolidColor(MaterialTheme.colorScheme.primary)
+                    )
+                    Text("px", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 2.dp))
+                }
+                // + 按钮
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .pointerInput(valueRange) {
+                            coroutineScope {
+                                var pressed = false
+                                launch {
+                                    detectTapGestures(
+                                        onPress = {
+                                            pressed = true
+                                            focusManager.clearFocus()
+                                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                            onAnimate((animatable.value + 0.1f).coerceIn(valueRange.start, valueRange.endInclusive), true)
+                                            tryAwaitRelease()
+                                            pressed = false
+                                        }
+                                    )
+                                }
+                                launch {
+                                    while (true) {
+                                        awaitPointerEventScope { awaitFirstDown(requireUnconsumed = false) }
+                                        kotlinx.coroutines.delay(500.milliseconds)
+                                        if (pressed) {
+                                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                            while (pressed) {
+                                                onAnimate((animatable.value + 0.1f).coerceIn(valueRange.start, valueRange.endInclusive), true)
+                                                view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                                                kotlinx.coroutines.delay(80.milliseconds)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                }
             }
         }
 

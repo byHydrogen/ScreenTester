@@ -508,8 +508,19 @@ fun MultiColorModePanel(
         Triple("莫奈", PresetScheme.MONET, listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary, MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.error))
     )
 
-    // 当前选中的预设方案
-    var selectedPresetScheme by remember { mutableStateOf<PresetScheme?>(null) }
+    // 当前选中的预设方案（根据已保存的颜色自动检测）
+    var selectedPresetScheme by remember {
+        val current = ThemeSettings.multiColorSelectedColors
+        mutableStateOf(
+            when {
+                current.size == 7 && current == listOf(-65536, -23296, -256, -16711936, -16776961, -11842750, -7536641) -> PresetScheme.RAINBOW
+                current.size == 3 && current == listOf(-65536, -23296, -256) -> PresetScheme.WARM
+                current.size == 3 && current == listOf(-16776961, -16711936, -7536641) -> PresetScheme.COOL
+                current.size == 3 && current == listOf(-65536, -16711936, -16776961) -> PresetScheme.HIGH_CONTRAST
+                else -> null
+            }
+        )
+    }
 
     // 使用 AnimatedVisibility 实现动画
     AnimatedVisibility(

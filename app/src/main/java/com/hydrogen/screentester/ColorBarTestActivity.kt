@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.view.HapticFeedbackConstants
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.OnBackPressedCallback
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -12,7 +13,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material3.Icon
@@ -31,6 +31,7 @@ import kotlinx.coroutines.delay
 
 class ColorBarTestActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -92,7 +93,7 @@ class ColorBarTestActivity : ComponentActivity() {
                 AnimatedVisibility(visible = showHint, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 60.dp)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.background(Color.White.copy(alpha = 0.9f), RoundedCornerShape(25.dp)).padding(horizontal = 20.dp, vertical = 12.dp)
+                        modifier = Modifier.background(Color.White.copy(alpha = 0.9f), G2Shapes.indicator).padding(horizontal = 20.dp, vertical = 12.dp)
                     ) {
                         Icon(Icons.Default.TouchApp, null, tint = Color(0xFFD32F2F), modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(8.dp))

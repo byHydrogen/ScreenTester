@@ -4,11 +4,11 @@ import android.os.Bundle
 import android.view.MotionEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.OnBackPressedCallback
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -28,10 +28,12 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.hydrogen.screentester.ui.theme.ScreenTesterTheme
+import kotlin.math.roundToInt
 
 class TouchSamplingActivity : ComponentActivity() {
     @OptIn(ExperimentalComposeUiApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -79,8 +81,9 @@ class TouchSamplingActivity : ComponentActivity() {
                                     while (eventTimestamps.isNotEmpty() && eventTime - eventTimestamps.first() > 200) {
                                         eventTimestamps.removeAt(0)
                                     }
-                                    if (eventTimestamps.size > 2) {
-                                        val calculatedHz = eventTimestamps.size * 5
+                                    if (eventTimestamps.size >= 2) {
+                                        val duration = eventTimestamps.last() - eventTimestamps.first()
+                                        val calculatedHz = if (duration > 0) ((eventTimestamps.size - 1).toFloat() / duration * 1000f).roundToInt() else 0
                                         displayHz = calculatedHz
                                         if (calculatedHz > peakHz) peakHz = calculatedHz
                                         if (hzHistory.isEmpty() || Math.abs(calculatedHz - (hzHistory.lastOrNull() ?: 0)) > 2) {
@@ -117,7 +120,7 @@ class TouchSamplingActivity : ComponentActivity() {
 
                         Surface(
                             color = monetContainer,
-                            shape = RoundedCornerShape(16.dp)
+                            shape = G2Shapes.button
                         ) {
                             Text(
                                 text = "稳定峰值: $peakHz Hz",

@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.view.HapticFeedbackConstants
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.OnBackPressedCallback
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -36,6 +37,7 @@ import kotlinx.coroutines.delay
 
 class GrayscaleTestActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
         // 1. 全屏沉浸
@@ -110,7 +112,7 @@ class GrayscaleTestActivity : ComponentActivity() {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
-                            .background(Color.White.copy(alpha = 0.9f), RoundedCornerShape(25.dp))
+                            .background(Color.White.copy(alpha = 0.9f), G2Shapes.indicator)
                             .padding(horizontal = 20.dp, vertical = 12.dp)
                     ) {
                         Icon(Icons.Default.TouchApp, null, tint = Color(0xFF1976D2), modifier = Modifier.size(20.dp))

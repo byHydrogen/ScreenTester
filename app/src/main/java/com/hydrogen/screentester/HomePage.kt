@@ -24,11 +24,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalConfiguration
@@ -42,6 +47,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -65,6 +71,7 @@ fun HomePage() {
     var previousText by remember { mutableStateOf("") }
     var animStartIndex by remember { mutableIntStateOf(-1) }
     val textAlpha = remember { Animatable(1f) }
+    val textBaselineShift = remember { Animatable(0f) }
 
     // 提示文字（Placeholder）的淡出动画
     val placeholderAlpha by animateFloatAsState(
@@ -73,17 +80,18 @@ fun HomePage() {
         label = "placeholderAlpha"
     )
 
-    // 精准计算当前帧新文字的实际透明度
+    // 精准计算当前帧新文字的实际透明度和上浮偏移
     val currentAlpha = if (isNewCharFirstFrame) 0f else textAlpha.value
+    val currentShift = if (isNewCharFirstFrame) -0.3f else textBaselineShift.value
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
-    val displayTextFieldValue = remember(textFieldValue, animStartIndex, currentAlpha, onSurfaceColor) {
+    val displayTextFieldValue = remember(textFieldValue, animStartIndex, currentAlpha, currentShift, onSurfaceColor) {
         val text = textFieldValue.text
         val annotatedString = buildAnnotatedString {
             if (animStartIndex in 0..text.length) {
                 withStyle(SpanStyle(color = onSurfaceColor)) {
                     append(text.substring(0, animStartIndex))
                 }
-                withStyle(SpanStyle(color = onSurfaceColor.copy(alpha = currentAlpha))) {
+                withStyle(SpanStyle(color = onSurfaceColor.copy(alpha = currentAlpha), baselineShift = androidx.compose.ui.text.style.BaselineShift(currentShift))) {
                     append(text.substring(animStartIndex))
                 }
             } else {
@@ -95,7 +103,7 @@ fun HomePage() {
         textFieldValue.copy(annotatedString = annotatedString)
     }
 
-    // ================= 动画状态核心管理 =================
+    // 动画状态核心管理
     var animationTrigger by remember { mutableIntStateOf(0) }
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -206,10 +214,16 @@ fun HomePage() {
                                             isNewCharFirstFrame = true
 
                                             animJob?.cancel()
-                                            animJob = scope.launch {
-                                                textAlpha.snapTo(0f)
+                                            if (ThemeSettings.isAnimationEnabled) {
+                                                animJob = scope.launch {
+                                                    textAlpha.snapTo(0f)
+                                                    textBaselineShift.snapTo(-0.3f)
+                                                    isNewCharFirstFrame = false
+                                                    launch { textAlpha.animateTo(1f, tween(250)) }
+                                                    textBaselineShift.animateTo(0f, tween(200, easing = FastOutSlowInEasing))
+                                                }
+                                            } else {
                                                 isNewCharFirstFrame = false
-                                                textAlpha.animateTo(1f, tween(250))
                                             }
                                         } else {
                                             animStartIndex = -1
@@ -308,6 +322,7 @@ fun HomePage() {
                     exit = shrinkVertically(animationSpec = tween(300, easing = FastOutSlowInEasing)) + fadeOut(tween(300))
                 ) {
                     var showUpdateDialog by remember { mutableStateOf(false) }
+                    var showLinkDialog by remember { mutableStateOf<String?>(null) }
                     val bannerG2Shape = G2Shapes.card
 
                     // 更新横幅
@@ -354,9 +369,10 @@ fun HomePage() {
                         }
                     }
 
+                    val systemCornerRadius = getSystemCornerRadius()
+
                     // 更新弹窗
                     if (showUpdateDialog) {
-                        val systemCornerRadius = getSystemCornerRadius()
 
                         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -382,10 +398,23 @@ fun HomePage() {
                                 )
                             }
                         ) {
+                            // 防止内容区域滑动触发弹窗收起，只有拖动手柄能控制弹窗
+                            val sheetNestedScrollConnection = remember {
+                                object : NestedScrollConnection {
+                                    override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                                        return if (available.y > 0) available.copy(x = 0f) else Offset.Zero
+                                    }
+                                    override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                                        return if (available.y > 0) available.copy(x = 0f) else Velocity.Zero
+                                    }
+                                }
+                            }
+
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = 24.dp, vertical = 16.dp)
+                                    .nestedScroll(sheetNestedScrollConnection)
                             ) {
                                 // 标题
                                 Text(
@@ -405,14 +434,17 @@ fun HomePage() {
 
                                 Spacer(modifier = Modifier.height(16.dp))
 
-                                // 更新日志
-                                Text(
+                                // 更新日志（支持 Markdown）
+                                MarkdownText(
                                     text = GlobalUpdateState.latestChangelog,
                                     fontSize = 14.sp,
                                     lineHeight = 20.sp,
+                                    textColor = MaterialTheme.colorScheme.onSurface.toArgb(),
+                                    linkColor = MaterialTheme.colorScheme.primary.toArgb(),
+                                    onLinkClick = { showLinkDialog = it },
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .heightIn(max = 200.dp)
+                                        .heightIn(max = 250.dp)
                                         .verticalScroll(rememberScrollState())
                                 )
 
@@ -491,6 +523,14 @@ fun HomePage() {
                                 Spacer(modifier = Modifier.height(16.dp))
                             }
                         }
+                    }
+
+                    // 链接确认弹窗
+                    if (showLinkDialog != null) {
+                        LinkConfirmDialog(
+                            url = showLinkDialog ?: "",
+                            onDismiss = { showLinkDialog = null }
+                        )
                     }
                 }
 

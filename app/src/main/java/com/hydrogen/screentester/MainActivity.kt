@@ -29,6 +29,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
@@ -88,6 +89,50 @@ class CachedG2Shape(
     }
 }
 
+// 可缓存的 SmoothCorner Shape 类（用于 HDR 等页面，圆角公式与 CachedG2Shape 不同）
+class CachedSmoothCornerShape(
+    private val radius: androidx.compose.ui.unit.Dp
+) : androidx.compose.ui.graphics.Shape {
+    private var cachedSize: androidx.compose.ui.geometry.Size? = null
+    private var cachedOutline: androidx.compose.ui.graphics.Outline? = null
+
+    override fun createOutline(
+        size: androidx.compose.ui.geometry.Size,
+        layoutDirection: androidx.compose.ui.unit.LayoutDirection,
+        density: androidx.compose.ui.unit.Density
+    ): androidx.compose.ui.graphics.Outline {
+        if (cachedSize == size && cachedOutline != null) {
+            return cachedOutline!!
+        }
+
+        val r = with(density) { radius.toPx() }
+        val w = size.width
+        val h = size.height
+        val maxR = minOf(w / 2f, h / 2f)
+        val finalR = if (r > maxR) maxR else r
+
+        val path = Path().apply {
+            val factor = 1.52f
+            val c = finalR * factor
+            moveTo(c, 0f)
+            lineTo(w - c, 0f)
+            cubicTo(w - finalR * 0.55f, 0f, w, finalR * 0.55f, w, c)
+            lineTo(w, h - c)
+            cubicTo(w, h - finalR * 0.55f, w - finalR * 0.55f, h, w - c, h)
+            lineTo(c, h)
+            cubicTo(finalR * 0.55f, h, 0f, h - finalR * 0.55f, 0f, h - c)
+            lineTo(0f, c)
+            cubicTo(0f, finalR * 0.55f, finalR * 0.55f, 0f, c, 0f)
+            close()
+        }
+
+        val outline = androidx.compose.ui.graphics.Outline.Generic(path)
+        cachedSize = size
+        cachedOutline = outline
+        return outline
+    }
+}
+
 // 预定义的常用 G2 Shape 实例
 object G2Shapes {
     val navBar = CachedG2Shape(37f, 0.55f)
@@ -102,6 +147,8 @@ object G2Shapes {
     val aboutButton = CachedG2Shape(13f, 0.45f)
     val newVersionCard = CachedG2Shape(20f, 0.45f)
     val logo = CachedG2Shape(24f, 0.45f)
+    val hdrCard = CachedSmoothCornerShape(24.dp)
+    val hdrInnerCard = CachedSmoothCornerShape(16.dp)
 }
 
 // 获取系统圆角半径
@@ -145,7 +192,7 @@ class MainActivity : ComponentActivity() {
                     // 确保远程版本确实更高
                     val pInfo = packageManager.getPackageInfo(packageName, 0)
                     val localVersion = pInfo.versionName ?: ""
-                    if (isVersionGreater(version, localVersion)) {
+                    if (UpdateManager.isVersionGreater(version, localVersion)) {
                         GlobalUpdateState.hasNewVersion = true
                         GlobalUpdateState.latestVersionName = version
                         GlobalUpdateState.latestChangelog = changelog ?: ""
@@ -156,7 +203,40 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             ScreenTesterTheme {
+                // 状态栏图标颜色跟随应用内深色/浅色设置，而非系统
+                val view = LocalView.current
+                val isDark = when (ThemeSettings.darkModeState) {
+                    DarkModeConfig.FOLLOW_SYSTEM -> isSystemInDarkTheme()
+                    DarkModeConfig.LIGHT -> false
+                    DarkModeConfig.DARK -> true
+                }
+                if (!view.isInEditMode) {
+                    SideEffect {
+                        val window = (view.context as android.app.Activity).window
+                        androidx.core.view.WindowInsetsControllerCompat(window, view).apply {
+                            isAppearanceLightStatusBars = !isDark
+                            isAppearanceLightNavigationBars = !isDark
+                        }
+                    }
+                }
+
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    // 首次启动弹出 QQ 加群弹窗（仅弹一次）
+                    val context = LocalContext.current
+                    val prefs = remember { context.getSharedPreferences("app_prefs", MODE_PRIVATE) }
+                    var showQQDialog by remember {
+                        mutableStateOf(!prefs.getBoolean("qq_group_dialog_shown", false))
+                    }
+
+                    if (showQQDialog) {
+                        QQGroupDialog(
+                            onDismiss = {
+                                showQQDialog = false
+                                prefs.edit().putBoolean("qq_group_dialog_shown", true).apply()
+                            }
+                        )
+                    }
+
                     MainContainer()
                 }
             }

@@ -41,22 +41,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
-import androidx.compose.ui.graphics.Outline
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -95,38 +88,6 @@ class HDRTestActivity : ComponentActivity() {
                 HDRTestScreen(isDarkTheme = isDarkTheme) { finish() }
             }
         }
-    }
-}
-
-class SmoothCornerShape(private val radius: Dp) : Shape {
-    override fun createOutline(
-        size: Size,
-        layoutDirection: LayoutDirection,
-        density: Density
-    ): Outline {
-        val r = with(density) { radius.toPx() }
-        val w = size.width
-        val h = size.height
-
-        val maxR = minOf(w / 2f, h / 2f)
-        val finalR = if (r > maxR) maxR else r
-
-        val path = Path().apply {
-            reset()
-            val factor = 1.52f
-            val c = finalR * factor
-            moveTo(c, 0f)
-            lineTo(w - c, 0f)
-            cubicTo(w - finalR * 0.55f, 0f, w, finalR * 0.55f, w, c)
-            lineTo(w, h - c)
-            cubicTo(w, h - finalR * 0.55f, w - finalR * 0.55f, h, w - c, h)
-            lineTo(c, h)
-            cubicTo(finalR * 0.55f, h, 0f, h - finalR * 0.55f, 0f, h - c)
-            lineTo(0f, c)
-            cubicTo(0f, finalR * 0.55f, finalR * 0.55f, 0f, c, 0f)
-            close()
-        }
-        return Outline.Generic(path)
     }
 }
 
@@ -250,7 +211,7 @@ fun HDRTestScreen(isDarkTheme: Boolean, onExit: () -> Unit) {
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight(),
-                    shape = SmoothCornerShape(24.dp),
+                    shape = G2Shapes.hdrCard,
                     elevation = CardDefaults.cardElevation(0.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                 ) {
@@ -267,7 +228,7 @@ fun HDRTestScreen(isDarkTheme: Boolean, onExit: () -> Unit) {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .weight(1f)
-                                .clip(SmoothCornerShape(16.dp))
+                                .clip(G2Shapes.hdrInnerCard)
                                 .background(animatedRefBgColor)
                         ) {
                             val sdrTextColor by animateColorAsState(
@@ -343,7 +304,7 @@ fun HDRTestScreen(isDarkTheme: Boolean, onExit: () -> Unit) {
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight(),
-                    shape = SmoothCornerShape(24.dp),
+                    shape = G2Shapes.hdrCard,
                     elevation = CardDefaults.cardElevation(0.dp),
                     colors = CardDefaults.cardColors(containerColor = animatedBgColor)
                 ) {

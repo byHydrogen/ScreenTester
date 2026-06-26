@@ -27,17 +27,16 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.hydrogen.screentester.ui.theme.ScreenTesterTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -59,6 +58,10 @@ class OOBEActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         ThemeSettings.loadConfig(this)
+
+        // 键盘弹起时不缩小窗口，防止 Canvas 红线被推上去
+        // 输入框通过 imePadding() 保证可滚动到可见区域
+        window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
 
         WindowCompat.getInsetsController(window, window.decorView).apply {
             hide(WindowInsetsCompat.Type.systemBars())
@@ -104,6 +107,21 @@ fun OOBEContent(onComplete: () -> Unit, onSkip: () -> Unit) {
     val scope = rememberCoroutineScope()
     val pagerState = rememberPagerState(pageCount = { 6 })
     val view = LocalView.current
+    val context = LocalContext.current
+
+    var isCalibrating by remember { mutableStateOf(ThemeSettings.useCustomRadius) }
+
+    // 校准状态
+    val calibPrefs = remember { context.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE) }
+    var isG2Enabled by remember { mutableStateOf(calibPrefs.getBoolean("is_g2_enabled", false)) }
+    val calibTLX = remember { Animatable(calibPrefs.getFloat("r_tl_x", 0f)) }
+    val calibTRX = remember { Animatable(calibPrefs.getFloat("r_tr_x", 0f)) }
+    val calibBLX = remember { Animatable(calibPrefs.getFloat("r_bl_x", 0f)) }
+    val calibBRX = remember { Animatable(calibPrefs.getFloat("r_br_x", 0f)) }
+    val calibTLY = remember { Animatable(calibPrefs.getFloat("r_tl_y", 0f)) }
+    val calibTRY = remember { Animatable(calibPrefs.getFloat("r_tr_y", 0f)) }
+    val calibBLY = remember { Animatable(calibPrefs.getFloat("r_bl_y", 0f)) }
+    val calibBRY = remember { Animatable(calibPrefs.getFloat("r_br_y", 0f)) }
 
     LaunchedEffect(pagerState.currentPage) {
         OOBEState.currentStep = pagerState.currentPage
@@ -116,6 +134,33 @@ fun OOBEContent(onComplete: () -> Unit, onSkip: () -> Unit) {
     }
 
     val backgroundBrush = DeviceUtils.backgroundBrush(isDark)
+
+    // 校准模式背景渐变动画
+    val whiteOverlayAlpha by animateFloatAsState(
+        targetValue = if (isCalibrating && pagerState.currentPage == 1) 1f else 0f,
+        animationSpec = tween(500),
+        label = "whiteOverlay"
+    )
+
+    // 底部导航浅色主题混合
+    val isLightMode = isCalibrating && pagerState.currentPage == 1
+    val oobeLightScheme = remember { dynamicLightColorScheme(context) }
+    val oobeDarkScheme = MaterialTheme.colorScheme
+    val oobeBlend by animateFloatAsState(if (isLightMode) 1f else 0f, tween(500), label = "oobeBlend")
+    val oobeBlendedScheme = oobeDarkScheme.copy(
+        surface = lerp(oobeDarkScheme.surface, oobeLightScheme.surface, oobeBlend),
+        onSurface = lerp(oobeDarkScheme.onSurface, oobeLightScheme.onSurface, oobeBlend),
+        onSurfaceVariant = lerp(oobeDarkScheme.onSurfaceVariant, oobeLightScheme.onSurfaceVariant, oobeBlend),
+        primary = lerp(oobeDarkScheme.primary, oobeLightScheme.primary, oobeBlend),
+        onPrimary = lerp(oobeDarkScheme.onPrimary, oobeLightScheme.onPrimary, oobeBlend),
+        primaryContainer = lerp(oobeDarkScheme.primaryContainer, oobeLightScheme.primaryContainer, oobeBlend),
+        onPrimaryContainer = lerp(oobeDarkScheme.onPrimaryContainer, oobeLightScheme.onPrimaryContainer, oobeBlend),
+        surfaceVariant = lerp(oobeDarkScheme.surfaceVariant, oobeLightScheme.surfaceVariant, oobeBlend),
+        secondary = lerp(oobeDarkScheme.secondary, oobeLightScheme.secondary, oobeBlend),
+        onSecondary = lerp(oobeDarkScheme.onSecondary, oobeLightScheme.onSecondary, oobeBlend),
+        secondaryContainer = lerp(oobeDarkScheme.secondaryContainer, oobeLightScheme.secondaryContainer, oobeBlend),
+        onSecondaryContainer = lerp(oobeDarkScheme.onSecondaryContainer, oobeLightScheme.onSecondaryContainer, oobeBlend),
+    )
 
     val skipAlpha by animateFloatAsState(
         targetValue = if (pagerState.currentPage in 1..5) 1f else 0f,
@@ -160,6 +205,14 @@ fun OOBEContent(onComplete: () -> Unit, onSkip: () -> Unit) {
     var isDragging by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize().background(backgroundBrush)) {
+        // 校准模式浅灰色背景叠加层
+        if (whiteOverlayAlpha > 0f) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(if (isDark) Color(0xFFDFDFDF).copy(alpha = whiteOverlayAlpha) else Color.White.copy(alpha = whiteOverlayAlpha))
+            )
+        }
 
         // 层级 1：基础内容层
         Column(
@@ -173,7 +226,14 @@ fun OOBEContent(onComplete: () -> Unit, onSkip: () -> Unit) {
             ) { pageIndex ->
                 when (pageIndex) {
                     0 -> OOBEWelcomeStep(isDark)
-                    1 -> OOBECornerCalibrationStep(isDark)
+                    1 -> OOBECornerCalibrationStep(
+                        isDark,
+                        onCalibrationChanged = { isCalibrating = it },
+                        isG2Enabled = isG2Enabled,
+                        onG2Changed = { isG2Enabled = it },
+                        tlXAnim = calibTLX, trXAnim = calibTRX, blXAnim = calibBLX, brXAnim = calibBRX,
+                        tlYAnim = calibTLY, trYAnim = calibTRY, blYAnim = calibBLY, brYAnim = calibBRY
+                    )
                     2 -> OOBETestLineStep(isDark,
                         onThicknessChange = { realtimeThickness = it },
                         onSegmentLengthChange = { realtimeSegmentLength = it },
@@ -186,6 +246,7 @@ fun OOBEContent(onComplete: () -> Unit, onSkip: () -> Unit) {
             }
 
             // 底部导航区
+            MaterialTheme(colorScheme = oobeBlendedScheme) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -221,7 +282,7 @@ fun OOBEContent(onComplete: () -> Unit, onSkip: () -> Unit) {
                         onClick = {
                             view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                             if (pagerState.currentPage < 5) {
-                                scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
+                                            scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
                             } else {
                                 onComplete()
                             }
@@ -271,9 +332,18 @@ fun OOBEContent(onComplete: () -> Unit, onSkip: () -> Unit) {
                 }
             }
         }
+            }
 
         // 层级 2：全局圆角和边框预览
-        OOBELiveBorderPreview(pagerState, realtimeThickness, realtimeSegmentLength, isDragging)
+        OOBELiveBorderPreview(
+            pagerState, realtimeThickness, realtimeSegmentLength, isDragging,
+            isG2Enabled = isG2Enabled,
+            primaryColor = oobeBlendedScheme.primary,
+            offTLX = calibTLX.value, offTLY = calibTLY.value,
+            offTRX = calibTRX.value, offTRY = calibTRY.value,
+            offBLX = calibBLX.value, offBLY = calibBLY.value,
+            offBRX = calibBRX.value, offBRY = calibBRY.value
+        )
 
         // 层级 3：全屏彩带
         AnimatedVisibility(
@@ -371,38 +441,111 @@ fun OOBEWelcomeStep(isDark: Boolean) {
 
 // 2.圆角校准
 @Composable
-fun OOBECornerCalibrationStep(isDark: Boolean) {
+fun OOBECornerCalibrationStep(
+    isDark: Boolean,
+    onCalibrationChanged: (Boolean) -> Unit,
+    isG2Enabled: Boolean,
+    onG2Changed: (Boolean) -> Unit,
+    tlXAnim: Animatable<Float, *>, trXAnim: Animatable<Float, *>,
+    blXAnim: Animatable<Float, *>, brXAnim: Animatable<Float, *>,
+    tlYAnim: Animatable<Float, *>, trYAnim: Animatable<Float, *>,
+    blYAnim: Animatable<Float, *>, brYAnim: Animatable<Float, *>
+) {
     val context = LocalContext.current
     val view = LocalView.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-
-    // 添加生命周期监听，确保从校准车间返回后实时更新数据
-    var refreshTrigger by remember { mutableIntStateOf(0) }
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                ThemeSettings.loadConfig(context)
-                refreshTrigger++
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
-
-    val currentTrigger = refreshTrigger
+    val focusManager = LocalFocusManager.current
+    val scope = rememberCoroutineScope()
 
     val systemRadius = try {
         val insets = (context as? android.app.Activity)?.window?.decorView?.rootWindowInsets
         insets?.getRoundedCorner(android.view.RoundedCorner.POSITION_TOP_LEFT)?.radius?.toFloat() ?: 100f
     } catch (_: Exception) { 100f }
 
-    // 用当前触发器绑定状态，实现实时刷新
-    var useCustom by remember(currentTrigger) { mutableStateOf(ThemeSettings.useCustomRadius) }
+    var useCustom by remember { mutableStateOf(ThemeSettings.useCustomRadius) }
 
-    Column(
+    // 校准状态
+    val tlAnim = remember { Animatable(if (ThemeSettings.radiusTL < 0f) systemRadius else ThemeSettings.radiusTL) }
+    val trAnim = remember { Animatable(if (ThemeSettings.radiusTR < 0f) systemRadius else ThemeSettings.radiusTR) }
+    val blAnim = remember { Animatable(if (ThemeSettings.radiusBL < 0f) systemRadius else ThemeSettings.radiusBL) }
+    val brAnim = remember { Animatable(if (ThemeSettings.radiusBR < 0f) systemRadius else ThemeSettings.radiusBR) }
+    var isLinked by remember { mutableStateOf(true) }
+    var activeSection by remember { mutableStateOf<Int?>(0) }
+    var pinnedSections by remember { mutableStateOf(setOf<Int>()) }
+    val sliderSpec = tween<Float>(800, easing = FastOutSlowInEasing)
+
+    // 卡片颜色
+    val lightCardColor = oobeCardColor(false)
+    val darkCardColor = oobeCardColor(isDark)
+    val animatedCardColor by animateColorAsState(
+        targetValue = if (useCustom) lightCardColor else darkCardColor,
+        animationSpec = tween(500),
+        label = "cardColor"
+    )
+    val animatedCardBorder by animateColorAsState(
+        targetValue = if (useCustom) Color.Transparent else oobeCardBorder(isDark),
+        animationSpec = tween(500),
+        label = "cardBorder"
+    )
+    // 校准卡片（SectionCard）背景色渐变
+    val sectionCardColor by animateColorAsState(
+        targetValue = if (useCustom) oobeCardColor(false) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        animationSpec = tween(500),
+        label = "sectionCardColor"
+    )
+
+    // 实时持久化 + 内存更新
+    val prefs = remember { context.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE) }
+    val _trigger = tlAnim.value + trAnim.value + blAnim.value + brAnim.value +
+            tlXAnim.value + trXAnim.value + blXAnim.value + brXAnim.value +
+            tlYAnim.value + trYAnim.value + blYAnim.value + brYAnim.value
+    SideEffect {
+        if (useCustom) {
+            ThemeSettings.useCustomRadius = true
+            ThemeSettings.radiusTL = tlAnim.value; ThemeSettings.radiusTR = trAnim.value
+            ThemeSettings.radiusBL = blAnim.value; ThemeSettings.radiusBR = brAnim.value
+        }
+        ThemeSettings.saveCustomRadius(context, useCustom, tlAnim.value, trAnim.value, blAnim.value, brAnim.value)
+        prefs.edit().apply {
+            putFloat("r_tl_x", tlXAnim.value); putFloat("r_tr_x", trXAnim.value)
+            putFloat("r_bl_x", blXAnim.value); putFloat("r_br_x", brXAnim.value)
+            putFloat("r_tl_y", tlYAnim.value); putFloat("r_tr_y", trYAnim.value)
+            putFloat("r_bl_y", blYAnim.value); putFloat("r_br_y", brYAnim.value)
+            putBoolean("is_g2_enabled", isG2Enabled)
+            apply()
+        }
+    }
+
+    // 浅色主题平滑过渡
+    val lightScheme = remember { dynamicLightColorScheme(context) }
+    val darkScheme = MaterialTheme.colorScheme
+    val blendFactor by animateFloatAsState(
+        targetValue = if (useCustom) 1f else 0f,
+        animationSpec = tween(500),
+        label = "themeBlend"
+    )
+    val blendedScheme = darkScheme.copy(
+        surfaceVariant = lerp(darkScheme.surfaceVariant, lightScheme.surfaceVariant, blendFactor),
+        surface = lerp(darkScheme.surface, lightScheme.surface, blendFactor),
+        onSurface = lerp(darkScheme.onSurface, lightScheme.onSurface, blendFactor),
+        onSurfaceVariant = lerp(darkScheme.onSurfaceVariant, lightScheme.onSurfaceVariant, blendFactor),
+        primary = lerp(darkScheme.primary, lightScheme.primary, blendFactor),
+        onPrimary = lerp(darkScheme.onPrimary, lightScheme.onPrimary, blendFactor),
+        primaryContainer = lerp(darkScheme.primaryContainer, lightScheme.primaryContainer, blendFactor),
+        onPrimaryContainer = lerp(darkScheme.onPrimaryContainer, lightScheme.onPrimaryContainer, blendFactor),
+        secondary = lerp(darkScheme.secondary, lightScheme.secondary, blendFactor),
+        onSecondary = lerp(darkScheme.onSecondary, lightScheme.onSecondary, blendFactor),
+        secondaryContainer = lerp(darkScheme.secondaryContainer, lightScheme.secondaryContainer, blendFactor),
+        onSecondaryContainer = lerp(darkScheme.onSecondaryContainer, lightScheme.onSecondaryContainer, blendFactor),
+        outline = lerp(darkScheme.outline, lightScheme.outline, blendFactor),
+        outlineVariant = lerp(darkScheme.outlineVariant, lightScheme.outlineVariant, blendFactor),
+    )
+
+    MaterialTheme(colorScheme = blendedScheme) {
+        Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
+            .imePadding()
             .padding(horizontal = 24.dp)
             .padding(top = 80.dp, bottom = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -411,22 +554,21 @@ fun OOBECornerCalibrationStep(isDark: Boolean) {
         Spacer(Modifier.height(16.dp))
         Text("圆角校准", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onSurface, textAlign = TextAlign.Center)
         Spacer(Modifier.height(8.dp))
-        Text("绘制的线条圆角贴合你的手机屏幕圆角吗\n若不一致可打开开关进入校准车间手动校准", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+        Text("绘制的线条圆角贴合你的手机屏幕圆角吗\n若不一致可打开开关手动校准", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
         Spacer(Modifier.height(28.dp))
 
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = G2Shapes.card,
-            colors = CardDefaults.cardColors(containerColor = oobeCardColor(isDark)),
-            border = BorderStroke(1.dp, oobeCardBorder(isDark))
+            colors = CardDefaults.cardColors(containerColor = animatedCardColor),
+            border = BorderStroke(1.dp, animatedCardBorder)
         ) {
             Column(Modifier.padding(20.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("自定义圆角半径", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
-
                         val displayRadius = if (useCustom) {
-                            "当前自定义圆角：${String.format(java.util.Locale.US, "%.1f", ThemeSettings.radiusTL)} px"
+                            "当前自定义圆角：${String.format(java.util.Locale.US, "%.1f", tlAnim.value)} px"
                         } else {
                             "当前系统圆角：${String.format(java.util.Locale.US, "%.1f", systemRadius)} px"
                         }
@@ -437,30 +579,147 @@ fun OOBECornerCalibrationStep(isDark: Boolean) {
                         onCheckedChange = {
                             view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                             useCustom = it
-                            ThemeSettings.saveCustomRadius(context, it, ThemeSettings.radiusTL, ThemeSettings.radiusTR, ThemeSettings.radiusBL, ThemeSettings.radiusBR)
-                            ThemeSettings.loadConfig(context)
+                            onCalibrationChanged(it)
+                            if (it) {
+                                ThemeSettings.useCustomRadius = true
+                                ThemeSettings.radiusTL = tlAnim.value; ThemeSettings.radiusTR = trAnim.value
+                                ThemeSettings.radiusBL = blAnim.value; ThemeSettings.radiusBR = brAnim.value
+                            } else {
+                                ThemeSettings.useCustomRadius = false
+                                ThemeSettings.radiusTL = -1f; ThemeSettings.radiusTR = -1f
+                                ThemeSettings.radiusBL = -1f; ThemeSettings.radiusBR = -1f
+                            }
                         }
                     )
                 }
-
-                AnimatedVisibility(visible = useCustom) {
-                    Column {
-                        Spacer(Modifier.height(16.dp))
-                        Button(
-                            onClick = {
-                                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                context.startActivity(Intent(context, CornerCalibrationActivity::class.java))
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = G2Shapes.button,
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                        ) {
-                            Text("进入校准车间", fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
             }
         }
+
+        // 嵌入式校准控件
+        AnimatedVisibility(visible = useCustom) {
+            Column {
+                Spacer(Modifier.height(12.dp))
+
+                // G2 平滑 + 全局同步 按钮行
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    FilledTonalButton(
+                        onClick = {
+                            isLinked = !isLinked
+                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                            focusManager.clearFocus()
+                            if (isLinked) {
+                                scope.launch { trAnim.animateTo(tlAnim.value, sliderSpec) }
+                                scope.launch { blAnim.animateTo(tlAnim.value, sliderSpec) }
+                                scope.launch { brAnim.animateTo(tlAnim.value, sliderSpec) }
+                                scope.launch { trXAnim.animateTo(tlXAnim.value, sliderSpec) }
+                                scope.launch { blXAnim.animateTo(tlXAnim.value, sliderSpec) }
+                                scope.launch { brXAnim.animateTo(tlXAnim.value, sliderSpec) }
+                                scope.launch { trYAnim.animateTo(tlYAnim.value, sliderSpec) }
+                                scope.launch { blYAnim.animateTo(tlYAnim.value, sliderSpec) }
+                                scope.launch { brYAnim.animateTo(tlYAnim.value, sliderSpec) }
+                            }
+                        },
+                        shape = G2Shapes.gridCard,
+                        modifier = Modifier.weight(1.2f).height(44.dp)
+                    ) {
+                        Text(
+                            text = if (isLinked) "全局同步调节" else "四角独立调节",
+                            fontWeight = FontWeight.Bold, fontSize = 13.sp
+                        )
+                    }
+
+                    val g2BgColor by animateColorAsState(
+                        targetValue = if (isG2Enabled) lightScheme.primary else lightScheme.surfaceVariant,
+                        animationSpec = tween(300), label = "g2Bg"
+                    )
+                    val g2ContentColor by animateColorAsState(
+                        targetValue = if (isG2Enabled) lightScheme.onPrimary else lightScheme.onSurfaceVariant,
+                        animationSpec = tween(300), label = "g2Ct"
+                    )
+                    Button(
+                        onClick = {
+                            onG2Changed(!isG2Enabled)
+                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        },
+                        shape = G2Shapes.gridCard,
+                        colors = ButtonDefaults.buttonColors(containerColor = g2BgColor, contentColor = g2ContentColor),
+                        modifier = Modifier.weight(0.8f).height(44.dp),
+                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
+                    ) {
+                        Text(
+                            text = if (isG2Enabled) "G2平滑:开" else "G2平滑:关",
+                            fontWeight = FontWeight.Bold, fontSize = 13.sp
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                SectionCard(
+                    title = "基础圆角半径",
+                    isExpanded = activeSection == 0 || 0 in pinnedSections,
+                    isPinned = 0 in pinnedSections,
+                    containerColor = sectionCardColor,
+                    onClick = {
+                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        if (0 in pinnedSections) pinnedSections = pinnedSections - 0
+                        else if (activeSection == 0) activeSection = null
+                        else activeSection = 0
+                    },
+                    onLongClick = {
+                        pinnedSections = if (0 in pinnedSections) pinnedSections - 0 else pinnedSections + 0
+                    }
+                ) {
+                    CalibrationSliderGroup(isLinked, tlAnim, trAnim, blAnim, brAnim, systemRadius, sliderSpec, 0f..300f, scope)
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                SectionCard(
+                    title = "横向 (X轴) 曲率修正",
+                    isExpanded = activeSection == 1 || 1 in pinnedSections,
+                    isPinned = 1 in pinnedSections,
+                    containerColor = sectionCardColor,
+                    onClick = {
+                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        if (1 in pinnedSections) pinnedSections = pinnedSections - 1
+                        else if (activeSection == 1) activeSection = null
+                        else activeSection = 1
+                    },
+                    onLongClick = {
+                        pinnedSections = if (1 in pinnedSections) pinnedSections - 1 else pinnedSections + 1
+                    }
+                ) {
+                    CalibrationSliderGroup(isLinked, tlXAnim, trXAnim, blXAnim, brXAnim, 0f, sliderSpec, -150f..150f, scope)
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                SectionCard(
+                    title = "纵向 (Y轴) 曲率修正",
+                    isExpanded = activeSection == 2 || 2 in pinnedSections,
+                    isPinned = 2 in pinnedSections,
+                    containerColor = sectionCardColor,
+                    onClick = {
+                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        if (2 in pinnedSections) pinnedSections = pinnedSections - 2
+                        else if (activeSection == 2) activeSection = null
+                        else activeSection = 2
+                    },
+                    onLongClick = {
+                        pinnedSections = if (2 in pinnedSections) pinnedSections - 2 else pinnedSections + 2
+                    }
+                ) {
+                    CalibrationSliderGroup(isLinked, tlYAnim, trYAnim, blYAnim, brYAnim, 0f, sliderSpec, -150f..150f, scope)
+                }
+
+                Spacer(Modifier.height(40.dp))
+            }
+        }
+    }
     }
 }
 
@@ -824,7 +1083,13 @@ fun OOBELiveBorderPreview(
     pagerState: androidx.compose.foundation.pager.PagerState,
     realtimeThickness: Float = ThemeSettings.testLineThickness,
     realtimeSegmentLength: Float = if (ThemeSettings.multiColorSegmentLength == 0f) 1f else ThemeSettings.multiColorSegmentLength,
-    isDragging: Boolean = false
+    isDragging: Boolean = false,
+    isG2Enabled: Boolean = false,
+    primaryColor: Color = MaterialTheme.colorScheme.primary,
+    offTLX: Float = 0f, offTLY: Float = 0f,
+    offTRX: Float = 0f, offTRY: Float = 0f,
+    offBLX: Float = 0f, offBLY: Float = 0f,
+    offBRX: Float = 0f, offBRY: Float = 0f
 ) {
     val targetAlpha = if (pagerState.currentPage in 1..2) 1f else 0f
     val alpha by animateFloatAsState(
@@ -836,20 +1101,6 @@ fun OOBELiveBorderPreview(
     if (alpha == 0f) return
 
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-    var refreshTrigger by remember { mutableIntStateOf(0) }
-
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) refreshTrigger++
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
-
-    val currentTrigger = refreshTrigger
-    val prefs = context.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
-    val isG2Enabled = prefs.getBoolean("is_g2_enabled", false)
 
     val systemRadius = try {
         val insets = (context as? android.app.Activity)?.window?.decorView?.rootWindowInsets
@@ -861,29 +1112,20 @@ fun OOBELiveBorderPreview(
     val baseBL = if (ThemeSettings.useCustomRadius) ThemeSettings.radiusBL.coerceAtLeast(0f) else systemRadius
     val baseBR = if (ThemeSettings.useCustomRadius) ThemeSettings.radiusBR.coerceAtLeast(0f) else systemRadius
 
-    val offTLX = if (ThemeSettings.useCustomRadius) prefs.getFloat("r_tl_x", 0f) else 0f
-    val offTLY = if (ThemeSettings.useCustomRadius) prefs.getFloat("r_tl_y", 0f) else 0f
-    val offTRX = if (ThemeSettings.useCustomRadius) prefs.getFloat("r_tr_x", 0f) else 0f
-    val offTRY = if (ThemeSettings.useCustomRadius) prefs.getFloat("r_tr_y", 0f) else 0f
-    val offBLX = if (ThemeSettings.useCustomRadius) prefs.getFloat("r_bl_x", 0f) else 0f
-    val offBLY = if (ThemeSettings.useCustomRadius) prefs.getFloat("r_bl_y", 0f) else 0f
-    val offBRX = if (ThemeSettings.useCustomRadius) prefs.getFloat("r_br_x", 0f) else 0f
-    val offBRY = if (ThemeSettings.useCustomRadius) prefs.getFloat("r_br_y", 0f) else 0f
-
-    val tlX = (baseTL + offTLX).coerceAtLeast(0f)
-    val tlY = (baseTL + offTLY).coerceAtLeast(0f)
-    val trX = (baseTR + offTRX).coerceAtLeast(0f)
-    val trY = (baseTR + offTRY).coerceAtLeast(0f)
-    val blX = (baseBL + offBLX).coerceAtLeast(0f)
-    val blY = (baseBL + offBLY).coerceAtLeast(0f)
-    val brX = (baseBR + offBRX).coerceAtLeast(0f)
-    val brY = (baseBR + offBRY).coerceAtLeast(0f)
+    val tlX = (baseTL + if (ThemeSettings.useCustomRadius) offTLX else 0f).coerceAtLeast(0f)
+    val tlY = (baseTL + if (ThemeSettings.useCustomRadius) offTLY else 0f).coerceAtLeast(0f)
+    val trX = (baseTR + if (ThemeSettings.useCustomRadius) offTRX else 0f).coerceAtLeast(0f)
+    val trY = (baseTR + if (ThemeSettings.useCustomRadius) offTRY else 0f).coerceAtLeast(0f)
+    val blX = (baseBL + if (ThemeSettings.useCustomRadius) offBLX else 0f).coerceAtLeast(0f)
+    val blY = (baseBL + if (ThemeSettings.useCustomRadius) offBLY else 0f).coerceAtLeast(0f)
+    val brX = (baseBR + if (ThemeSettings.useCustomRadius) offBRX else 0f).coerceAtLeast(0f)
+    val brY = (baseBR + if (ThemeSettings.useCustomRadius) offBRY else 0f).coerceAtLeast(0f)
 
     val isCalibrationPage = pagerState.currentPage == 1
 
     // 拖动时实时更新，页面切换时保留动画
     val animatedStrokeW by animateFloatAsState(
-        targetValue = if (isCalibrationPage) 10f else realtimeThickness,
+        targetValue = if (isCalibrationPage && !ThemeSettings.useCustomRadius) 10f else realtimeThickness,
         animationSpec = if (isDragging) tween(0) else tween(400),
         label = "strokeWAnimation"
     )
@@ -895,7 +1137,6 @@ fun OOBELiveBorderPreview(
     )
 
     // 读取渐变/单色状态
-    val primaryColor = MaterialTheme.colorScheme.primary
     val isMultiColor = ThemeSettings.isMultiColorMode
     val multiColors = ThemeSettings.multiColorSelectedColors
     val singleColor = ThemeSettings.testLineColor
