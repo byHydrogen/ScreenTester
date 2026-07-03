@@ -35,6 +35,9 @@ object ThemeSettings {
 
     var isAnimationEnabled by mutableStateOf(true)
 
+    // 设置页线条预览开关
+    var isSettingsLinePreviewEnabled by mutableStateOf(true)
+
     // 精简黑边遮挡测试页文字开关状态
     var isCompactModeEnabled by mutableStateOf(false)
 
@@ -77,6 +80,11 @@ object ThemeSettings {
         context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putBoolean("is_animation_enabled", enabled).apply()
     }
 
+    fun saveSettingsLinePreviewConfig(context: Context, enabled: Boolean) {
+        isSettingsLinePreviewEnabled = enabled
+        context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putBoolean("settings_line_preview", enabled).apply()
+    }
+
     // 保存精简模式设置
     fun saveCompactModeConfig(context: Context, enabled: Boolean) {
         isCompactModeEnabled = enabled
@@ -100,6 +108,19 @@ object ThemeSettings {
         multiColorSelectedColors = colors
         context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit()
             .putString("multi_color_selected", colors.joinToString(","))
+            .apply()
+    }
+
+    // 存储用户自定义的渐变方案
+    var customGradientSchemes by mutableStateOf<List<Pair<String, List<Int>>>>(emptyList())
+
+    // 保存自定义渐变方案
+    fun saveCustomGradientSchemes(context: Context, schemes: List<Pair<String, List<Int>>>) {
+        customGradientSchemes = schemes
+        val str = schemes.joinToString("|") { "${it.first}:${it.second.joinToString(",")}" }
+        context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+            .edit()
+            .putString("custom_gradient_schemes", str)
             .apply()
     }
 
@@ -151,7 +172,7 @@ object ThemeSettings {
         multiColorSelectedColors = colors.take(8)
         saveMultiColorSelectedColors(context, multiColorSelectedColors)
 
-        // 重置渐变颜色长度为默认值（0表示使用默认中间值）
+        // 重置渐变颜色长度为默认值
         multiColorSegmentLength = 0f
         saveMultiColorSegmentLength(context, 0f)
     }
@@ -203,6 +224,9 @@ object ThemeSettings {
         // 读取视图模式设置
         isGridView = prefs.getBoolean("is_grid_view", false)
 
+        // 读取设置页线条预览开关
+        isSettingsLinePreviewEnabled = prefs.getBoolean("settings_line_preview", true)
+
         // 读取渐变色条模式设置
         isMultiColorMode = prefs.getBoolean("is_multi_color_mode", false)
         val selectedStr = prefs.getString("multi_color_selected", null)
@@ -210,7 +234,7 @@ object ThemeSettings {
             multiColorSelectedColors = selectedStr.split(",").mapNotNull { it.toIntOrNull() }
         }
 
-        // 读取渐变颜色长度（0表示使用默认中间值）
+        // 读取渐变颜色长度
         multiColorSegmentLength = prefs.getFloat("multi_color_segment_length", 0f)
 
         // 读取外观设置
@@ -219,6 +243,25 @@ object ThemeSettings {
 
         // 读取线条颜色
         testLineColor = prefs.getInt("line_color", android.graphics.Color.WHITE)
+
+        val customSchemesStr = prefs.getString("custom_gradient_schemes", "") ?: ""
+        if (customSchemesStr.isNotEmpty()) {
+            customGradientSchemes = customSchemesStr.split("|").mapNotNull { s ->
+                try {
+                    if (s.contains(":")) {
+                        val parts = s.split(":")
+                        val name = parts[0]
+                        val colors = parts[1].split(",").mapNotNull { it.toIntOrNull() }
+                        if (colors.isNotEmpty()) name to colors else null
+                    } else {
+                        val colors = s.split(",").mapNotNull { it.toIntOrNull() }
+                        if (colors.isNotEmpty()) "自定义" to colors else null
+                    }
+                } catch (e: Exception) {
+                    null
+                }
+            }
+        }
 
         // 读取亮度设置
         isMaxBrightnessEnabled = prefs.getBoolean("max_brightness", false)
@@ -259,7 +302,7 @@ object ThemeSettings {
         if (am.isLowRamDevice) return false
 
         // 2. 利用 Performance Class 辨别性能层级（minSdk=31，无需版本判断）
-        //    若设备不支持 Performance Class，则用 CPU 核心数和内存兜底判断
+        //    若设备不支持 Performance Class，则用 CPU 核心数 and 内存兜底判断
         if (android.os.Build.VERSION.MEDIA_PERFORMANCE_CLASS < android.os.Build.VERSION_CODES.S) {
             val info = android.app.ActivityManager.MemoryInfo()
             am.getMemoryInfo(info)

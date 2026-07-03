@@ -9,8 +9,12 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -28,6 +32,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -109,7 +114,14 @@ fun OOBEContent(onComplete: () -> Unit, onSkip: () -> Unit) {
     val view = LocalView.current
     val context = LocalContext.current
 
+    val focusManager = LocalFocusManager.current
+
     var isCalibrating by remember { mutableStateOf(ThemeSettings.useCustomRadius) }
+
+    // 教程状态
+    val tutorialTargets = remember { mutableStateMapOf<Int, Rect>() }
+    var tutorialActive by remember { mutableStateOf(false) }
+    var tutorialStep by remember { mutableIntStateOf(0) }
 
     // 校准状态
     val calibPrefs = remember { context.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE) }
@@ -204,7 +216,14 @@ fun OOBEContent(onComplete: () -> Unit, onSkip: () -> Unit) {
     var realtimeSegmentLength by remember { mutableFloatStateOf(if (ThemeSettings.multiColorSegmentLength == 0f) 1f else ThemeSettings.multiColorSegmentLength) }
     var isDragging by remember { mutableStateOf(false) }
 
-    Box(modifier = Modifier.fillMaxSize().background(backgroundBrush)) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(backgroundBrush)
+            .pointerInput(Unit) {
+                detectTapGestures(onTap = { focusManager.clearFocus() })
+            }
+    ) {
         // 校准模式浅灰色背景叠加层
         if (whiteOverlayAlpha > 0f) {
             Box(
@@ -222,7 +241,7 @@ fun OOBEContent(onComplete: () -> Unit, onSkip: () -> Unit) {
                 state = pagerState,
                 modifier = Modifier.weight(1f),
                 beyondViewportPageCount = 5,
-                userScrollEnabled = true
+                userScrollEnabled = false
             ) { pageIndex ->
                 when (pageIndex) {
                     0 -> OOBEWelcomeStep(isDark)
@@ -230,6 +249,11 @@ fun OOBEContent(onComplete: () -> Unit, onSkip: () -> Unit) {
                         isDark,
                         onCalibrationChanged = { isCalibrating = it },
                         isG2Enabled = isG2Enabled,
+                        tutorialTargets = tutorialTargets,
+                        tutorialActive = tutorialActive,
+                        tutorialStep = tutorialStep,
+                        onTutorialToggle = { tutorialActive = it },
+                        onTutorialStepChange = { tutorialStep = it },
                         onG2Changed = { isG2Enabled = it },
                         tlXAnim = calibTLX, trXAnim = calibTRX, blXAnim = calibBLX, brXAnim = calibBRX,
                         tlYAnim = calibTLY, trYAnim = calibTRY, blYAnim = calibBLY, brYAnim = calibBRY
@@ -240,7 +264,7 @@ fun OOBEContent(onComplete: () -> Unit, onSkip: () -> Unit) {
                         onDraggingChange = { isDragging = it }
                     )
                     3 -> OOBEPureModeStep(isDark)
-                    4 -> OOBECardAnimationStep(isDark)
+                    4 -> OOBEAdvancedUIStep(isDark)
                     5 -> OOBECompletionStep(isDark, isActive = pagerState.currentPage == 5)
                 }
             }
@@ -356,6 +380,49 @@ fun OOBEContent(onComplete: () -> Unit, onSkip: () -> Unit) {
                 isActive = true
             )
         }
+
+        // 层级 4：教程引导
+        if (tutorialActive) {
+            val steps = listOf(
+                "调节模式" to "点击可切换调节模式\n全局同步调节模式下四角圆角一致\n若您的屏幕四角曲率不同可点击按钮切换为四角独立调节，该模式下可分别调整四个角至贴合手机屏幕圆角",
+                "G2 平滑圆角" to "开启后使用 G2 连续曲率算法，圆角线条更加圆润流畅，贴合屏幕物理曲率",
+                "基础圆角半径" to "您可通过拖动滑块，点击 +/- 按钮或点击数字调起键盘输入数字调节屏幕四个角的圆角半径大小，实时预览线条变化",
+                "卡片与调节操作说明" to "长按卡片可固定，点击重置按钮可恢复默认，点击 +/- 按钮可 ± 0.1，长按 +/- 按钮可快速连续加减",
+                "横向 X 轴曲率修正" to "微调圆角在水平方向的偏移量",
+                "纵向 Y 轴曲率修正" to "微调圆角在垂直方向的偏移量"
+            )
+
+            val targetIndex = when (tutorialStep) {
+                0 -> 0
+                1 -> 1
+                2, 3 -> 2
+                4 -> 3
+                5 -> 4
+                else -> 0
+            }
+
+            TutorialOverlay(
+                currentStep = tutorialStep,
+                totalSteps = 6,
+                targetBounds = tutorialTargets[targetIndex],
+                title = steps[tutorialStep].first,
+                description = steps[tutorialStep].second,
+                onPrevious = if (tutorialStep > 0) {{ tutorialStep-- }} else null,
+                onNext = {
+                    if (tutorialStep < 5) {
+                        tutorialStep++
+                    } else {
+                        tutorialActive = false
+                        markTutorialShown(context)
+                    }
+                },
+                onSkip = {
+                    tutorialActive = false
+                    markTutorialShown(context)
+                },
+                isLastStep = tutorialStep == 5
+            )
+        }
     }
 }
 
@@ -446,6 +513,11 @@ fun OOBECornerCalibrationStep(
     onCalibrationChanged: (Boolean) -> Unit,
     isG2Enabled: Boolean,
     onG2Changed: (Boolean) -> Unit,
+    tutorialTargets: MutableMap<Int, Rect>,
+    tutorialActive: Boolean,
+    tutorialStep: Int,
+    onTutorialToggle: (Boolean) -> Unit,
+    onTutorialStepChange: (Int) -> Unit,
     tlXAnim: Animatable<Float, *>, trXAnim: Animatable<Float, *>,
     blXAnim: Animatable<Float, *>, brXAnim: Animatable<Float, *>,
     tlYAnim: Animatable<Float, *>, trYAnim: Animatable<Float, *>,
@@ -471,6 +543,31 @@ fun OOBECornerCalibrationStep(
     var isLinked by remember { mutableStateOf(true) }
     var activeSection by remember { mutableStateOf<Int?>(0) }
     var pinnedSections by remember { mutableStateOf(setOf<Int>()) }
+
+    // 教程定位时自动展开对应 SectionCard
+    LaunchedEffect(tutorialActive, tutorialStep) {
+        if (tutorialActive) {
+            // 每次切换教程步骤时，立刻清除卡片的固定（图钉）状态
+            pinnedSections = emptySet()
+
+            // 当切换到 G2圆角高亮（Step 1）及以后时，强制恢复到“全局同步”模式
+            if (tutorialStep >= 1) {
+                isLinked = true
+            }
+
+            when (tutorialStep) {
+                0, 1, 2, 3 -> activeSection = 0 // 步骤0、1、2、3 都默认保持首个“基础圆角半径”卡片展开
+                4 -> activeSection = 1          // 步骤4 展开 X轴
+                5 -> activeSection = 2          // 步骤5 展开 Y轴
+            }
+        } else {
+            // 教程结束后，恢复默认状态，也拔掉图钉
+            activeSection = 0
+            pinnedSections = emptySet()
+            isLinked = true
+        }
+    }
+
     val sliderSpec = tween<Float>(800, easing = FastOutSlowInEasing)
 
     // 卡片颜色
@@ -584,6 +681,11 @@ fun OOBECornerCalibrationStep(
                                 ThemeSettings.useCustomRadius = true
                                 ThemeSettings.radiusTL = tlAnim.value; ThemeSettings.radiusTR = trAnim.value
                                 ThemeSettings.radiusBL = blAnim.value; ThemeSettings.radiusBR = brAnim.value
+                                // 首次打开开关时弹出教程
+                                if (!isTutorialShown(context)) {
+                                    onTutorialStepChange(0)
+                                    onTutorialToggle(true)
+                                }
                             } else {
                                 ThemeSettings.useCustomRadius = false
                                 ThemeSettings.radiusTL = -1f; ThemeSettings.radiusTR = -1f
@@ -606,6 +708,12 @@ fun OOBECornerCalibrationStep(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     FilledTonalButton(
+                        modifier = Modifier
+                            .onGloballyPositioned { coords ->
+                                val pos = coords.positionInWindow()
+                                tutorialTargets[0] = Rect(pos.x, pos.y, pos.x + coords.size.width, pos.y + coords.size.height)
+                            }
+                            .weight(1.2f).height(44.dp),
                         onClick = {
                             isLinked = !isLinked
                             view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
@@ -622,8 +730,7 @@ fun OOBECornerCalibrationStep(
                                 scope.launch { brYAnim.animateTo(tlYAnim.value, sliderSpec) }
                             }
                         },
-                        shape = G2Shapes.gridCard,
-                        modifier = Modifier.weight(1.2f).height(44.dp)
+                        shape = G2Shapes.gridCard
                     ) {
                         Text(
                             text = if (isLinked) "全局同步调节" else "四角独立调节",
@@ -646,7 +753,12 @@ fun OOBECornerCalibrationStep(
                         },
                         shape = G2Shapes.gridCard,
                         colors = ButtonDefaults.buttonColors(containerColor = g2BgColor, contentColor = g2ContentColor),
-                        modifier = Modifier.weight(0.8f).height(44.dp),
+                        modifier = Modifier
+                            .onGloballyPositioned { coords ->
+                                val pos = coords.positionInWindow()
+                                tutorialTargets[1] = Rect(pos.x, pos.y, pos.x + coords.size.width, pos.y + coords.size.height)
+                            }
+                            .weight(0.8f).height(44.dp),
                         elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
                     ) {
                         Text(
@@ -658,6 +770,10 @@ fun OOBECornerCalibrationStep(
 
                 Spacer(Modifier.height(12.dp))
 
+                Box(modifier = Modifier.onGloballyPositioned { coords ->
+                    val pos = coords.positionInWindow()
+                    tutorialTargets[2] = Rect(pos.x, pos.y, pos.x + coords.size.width, pos.y + coords.size.height)
+                }) {
                 SectionCard(
                     title = "基础圆角半径",
                     isExpanded = activeSection == 0 || 0 in pinnedSections,
@@ -675,9 +791,14 @@ fun OOBECornerCalibrationStep(
                 ) {
                     CalibrationSliderGroup(isLinked, tlAnim, trAnim, blAnim, brAnim, systemRadius, sliderSpec, 0f..300f, scope)
                 }
+                } // end Box (target 2)
 
                 Spacer(Modifier.height(12.dp))
 
+                Box(modifier = Modifier.onGloballyPositioned { coords ->
+                    val pos = coords.positionInWindow()
+                    tutorialTargets[3] = Rect(pos.x, pos.y, pos.x + coords.size.width, pos.y + coords.size.height)
+                }) {
                 SectionCard(
                     title = "横向 (X轴) 曲率修正",
                     isExpanded = activeSection == 1 || 1 in pinnedSections,
@@ -695,9 +816,14 @@ fun OOBECornerCalibrationStep(
                 ) {
                     CalibrationSliderGroup(isLinked, tlXAnim, trXAnim, blXAnim, brXAnim, 0f, sliderSpec, -150f..150f, scope)
                 }
+                } // end Box (target 3)
 
                 Spacer(Modifier.height(12.dp))
 
+                Box(modifier = Modifier.onGloballyPositioned { coords ->
+                    val pos = coords.positionInWindow()
+                    tutorialTargets[4] = Rect(pos.x, pos.y, pos.x + coords.size.width, pos.y + coords.size.height)
+                }) {
                 SectionCard(
                     title = "纵向 (Y轴) 曲率修正",
                     isExpanded = activeSection == 2 || 2 in pinnedSections,
@@ -715,6 +841,7 @@ fun OOBECornerCalibrationStep(
                 ) {
                     CalibrationSliderGroup(isLinked, tlYAnim, trYAnim, blYAnim, brYAnim, 0f, sliderSpec, -150f..150f, scope)
                 }
+                } // end Box (target 4)
 
                 Spacer(Modifier.height(40.dp))
             }
@@ -828,9 +955,9 @@ fun OOBEPureModeStep(isDark: Boolean) {
     }
 }
 
-// 5.卡片动效
+// 5.界面高级动效
 @Composable
-fun OOBECardAnimationStep(isDark: Boolean) {
+fun OOBEAdvancedUIStep(isDark: Boolean) {
     val context = LocalContext.current
     val view = LocalView.current
 
@@ -848,10 +975,10 @@ fun OOBECardAnimationStep(isDark: Boolean) {
             tint = MaterialTheme.colorScheme.primary
         )
         Spacer(Modifier.height(24.dp))
-        Text("卡片动效", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onSurface)
+        Text("界面高级动效", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onSurface)
         Spacer(Modifier.height(12.dp))
         Text(
-            text = "为主页和设置页的卡片添加淡入动画\n让界面切换更加流畅自然",
+            text = "自定义卡片动效与设置页线条预览",
             fontSize = 15.sp,
             lineHeight = 24.sp,
             textAlign = TextAlign.Center,
@@ -887,6 +1014,37 @@ fun OOBECardAnimationStep(isDark: Boolean) {
                         view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                         isEnabled = it
                         ThemeSettings.saveAnimationConfig(context, it)
+                    }
+                )
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = G2Shapes.card,
+            colors = CardDefaults.cardColors(containerColor = oobeCardColor(isDark)),
+            border = BorderStroke(1.dp, oobeCardBorder(isDark))
+        ) {
+            Row(
+                modifier = Modifier.padding(20.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("设置页线条预览", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = if (ThemeSettings.isSettingsLinePreviewEnabled) "已开启 - 调节线条时将显示实时线条预览" else "已关闭 - 调节线条时将不会显示线条预览",
+                        fontSize = 13.sp,
+                        color = if (ThemeSettings.isSettingsLinePreviewEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = ThemeSettings.isSettingsLinePreviewEnabled,
+                    onCheckedChange = {
+                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        ThemeSettings.saveSettingsLinePreviewConfig(context, it)
                     }
                 )
             }
@@ -1086,12 +1244,13 @@ fun OOBELiveBorderPreview(
     isDragging: Boolean = false,
     isG2Enabled: Boolean = false,
     primaryColor: Color = MaterialTheme.colorScheme.primary,
+    fixedAlpha: Float? = null,
     offTLX: Float = 0f, offTLY: Float = 0f,
     offTRX: Float = 0f, offTRY: Float = 0f,
     offBLX: Float = 0f, offBLY: Float = 0f,
     offBRX: Float = 0f, offBRY: Float = 0f
 ) {
-    val targetAlpha = if (pagerState.currentPage in 1..2) 1f else 0f
+    val targetAlpha = fixedAlpha ?: if (pagerState.currentPage in 1..2) 1f else 0f
     val alpha by animateFloatAsState(
         targetValue = targetAlpha,
         animationSpec = tween(500),
@@ -1121,7 +1280,7 @@ fun OOBELiveBorderPreview(
     val brX = (baseBR + if (ThemeSettings.useCustomRadius) offBRX else 0f).coerceAtLeast(0f)
     val brY = (baseBR + if (ThemeSettings.useCustomRadius) offBRY else 0f).coerceAtLeast(0f)
 
-    val isCalibrationPage = pagerState.currentPage == 1
+    val isCalibrationPage = if (fixedAlpha != null) false else (pagerState.currentPage == 1)
 
     // 拖动时实时更新，页面切换时保留动画
     val animatedStrokeW by animateFloatAsState(

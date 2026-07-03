@@ -35,8 +35,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -102,6 +105,11 @@ fun CalibrationScreen(onExit: () -> Unit) {
     val focusManager = LocalFocusManager.current
     val context = LocalContext.current
 
+    // 教程状态
+    val tutorialTargets = remember { mutableStateMapOf<Int, Rect>() }
+    var tutorialActive by remember { mutableStateOf(!isTutorialShown(context)) }
+    var tutorialStep by remember { mutableIntStateOf(0) }
+
     // 双击返回键拦截机制
     var lastBackTime by remember { mutableLongStateOf(0L) }
     BackHandler(enabled = true) {
@@ -140,6 +148,30 @@ fun CalibrationScreen(onExit: () -> Unit) {
     var isLinked by remember { mutableStateOf(true) }
     var activeSection by remember { mutableStateOf<Int?>(0) }
     var pinnedSections by remember { mutableStateOf(setOf<Int>()) }
+
+    // 教程定位时自动展开对应 SectionCard
+    LaunchedEffect(tutorialActive, tutorialStep) {
+        if (tutorialActive) {
+            // 每次切换教程步骤时，立刻清除卡片的固定（图钉）状态
+            pinnedSections = emptySet()
+
+            // 切换到 G2圆角高亮（Step 1）及以后时，强制恢复到“全局同步”模式
+            if (tutorialStep >= 1) {
+                isLinked = true
+            }
+
+            when (tutorialStep) {
+                0, 1, 2, 3 -> activeSection = 0 // 步骤0、1、2、3 都默认保持首个“基础圆角半径”卡片展开
+                4 -> activeSection = 1          // 步骤4 展开 X轴
+                5 -> activeSection = 2          // 步骤5 展开 Y轴
+            }
+        } else {
+            // 教程结束后，恢复默认状态，也拔掉图钉
+            activeSection = 0
+            pinnedSections = emptySet()
+            isLinked = true
+        }
+    }
 
     val sliderSpec = tween<Float>(durationMillis = 800, easing = FastOutSlowInEasing)
 
@@ -218,6 +250,12 @@ fun CalibrationScreen(onExit: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 FilledTonalButton(
+                    modifier = Modifier
+                        .onGloballyPositioned { coords ->
+                            val pos = coords.positionInWindow()
+                            tutorialTargets[0] = Rect(pos.x, pos.y, pos.x + coords.size.width, pos.y + coords.size.height)
+                        }
+                        .weight(1.2f).height(44.dp),
                     onClick = {
                         isLinked = !isLinked
                         view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
@@ -228,10 +266,7 @@ fun CalibrationScreen(onExit: () -> Unit) {
                             scope.launch { trYAnim.animateTo(tlYAnim.value, sliderSpec) }; scope.launch { blYAnim.animateTo(tlYAnim.value, sliderSpec) }; scope.launch { brYAnim.animateTo(tlYAnim.value, sliderSpec) }
                         }
                     },
-                    shape = G2Shapes.gridCard,
-                    modifier = Modifier
-                        .weight(1.2f)
-                        .height(44.dp)
+                    shape = G2Shapes.gridCard
                 ) {
                     Text(text = if (isLinked) "全局同步调节" else "四角独立调节", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 }
@@ -246,6 +281,12 @@ fun CalibrationScreen(onExit: () -> Unit) {
                 )
 
                 Button(
+                    modifier = Modifier
+                        .onGloballyPositioned { coords ->
+                            val pos = coords.positionInWindow()
+                            tutorialTargets[1] = Rect(pos.x, pos.y, pos.x + coords.size.width, pos.y + coords.size.height)
+                        }
+                        .weight(0.8f).height(44.dp),
                     onClick = {
                         isG2Enabled = !isG2Enabled
                         view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
@@ -255,9 +296,6 @@ fun CalibrationScreen(onExit: () -> Unit) {
                         containerColor = g2ButtonContainerColor,
                         contentColor = g2ButtonContentColor
                     ),
-                    modifier = Modifier
-                        .weight(0.8f)
-                        .height(44.dp),
                     elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
                 ) {
                     Text(text = if (isG2Enabled) "G2平滑:开" else "G2平滑:关", fontWeight = FontWeight.Bold, fontSize = 13.sp)
@@ -271,6 +309,10 @@ fun CalibrationScreen(onExit: () -> Unit) {
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                Box(modifier = Modifier.onGloballyPositioned { coords ->
+                    val pos = coords.positionInWindow()
+                    tutorialTargets[2] = Rect(pos.x, pos.y, pos.x + coords.size.width, pos.y + coords.size.height)
+                }) {
                 SectionCard(
                     title = "基础圆角半径",
                     isExpanded = activeSection == 0 || 0 in pinnedSections,
@@ -289,7 +331,12 @@ fun CalibrationScreen(onExit: () -> Unit) {
                 ) {
                     CalibrationSliderGroup(isLinked, tlAnim, trAnim, blAnim, brAnim, systemRadius, sliderSpec, 0f..300f, scope)
                 }
+                } // end Box (target 2)
 
+                Box(modifier = Modifier.onGloballyPositioned { coords ->
+                    val pos = coords.positionInWindow()
+                    tutorialTargets[3] = Rect(pos.x, pos.y, pos.x + coords.size.width, pos.y + coords.size.height)
+                }) {
                 SectionCard(
                     title = "横向 (X轴) 曲率修正",
                     isExpanded = activeSection == 1 || 1 in pinnedSections,
@@ -308,7 +355,12 @@ fun CalibrationScreen(onExit: () -> Unit) {
                 ) {
                     CalibrationSliderGroup(isLinked, tlXAnim, trXAnim, blXAnim, brXAnim, 0f, sliderSpec, -150f..150f, scope)
                 }
+                } // end Box (target 3)
 
+                Box(modifier = Modifier.onGloballyPositioned { coords ->
+                    val pos = coords.positionInWindow()
+                    tutorialTargets[4] = Rect(pos.x, pos.y, pos.x + coords.size.width, pos.y + coords.size.height)
+                }) {
                 SectionCard(
                     title = "纵向 (Y轴) 曲率修正",
                     isExpanded = activeSection == 2 || 2 in pinnedSections,
@@ -327,6 +379,7 @@ fun CalibrationScreen(onExit: () -> Unit) {
                 ) {
                     CalibrationSliderGroup(isLinked, tlYAnim, trYAnim, blYAnim, brYAnim, 0f, sliderSpec, -150f..150f, scope)
                 }
+                } // end Box (target 4)
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -354,17 +407,17 @@ fun CalibrationScreen(onExit: () -> Unit) {
                 Button(
                     onClick = {
                         view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
-                        ThemeSettings.saveCustomRadius(context, true, tlAnim.value, trAnim.value, blAnim.value, brAnim.value)
+                        ThemeSettings.saveCustomRadius(context, true, tlAnim.targetValue, trAnim.targetValue, blAnim.targetValue, brAnim.targetValue)
 
                         prefs.edit().apply {
-                            putFloat("r_tl_x", tlXAnim.value)
-                            putFloat("r_tr_x", trXAnim.value)
-                            putFloat("r_bl_x", blXAnim.value)
-                            putFloat("r_br_x", brXAnim.value)
-                            putFloat("r_tl_y", tlYAnim.value)
-                            putFloat("r_tr_y", trYAnim.value)
-                            putFloat("r_bl_y", blYAnim.value)
-                            putFloat("r_br_y", brYAnim.value)
+                            putFloat("r_tl_x", tlXAnim.targetValue)
+                            putFloat("r_tr_x", trXAnim.targetValue)
+                            putFloat("r_bl_x", blXAnim.targetValue)
+                            putFloat("r_br_x", brXAnim.targetValue)
+                            putFloat("r_tl_y", tlYAnim.targetValue)
+                            putFloat("r_tr_y", trYAnim.targetValue)
+                            putFloat("r_bl_y", blYAnim.targetValue)
+                            putFloat("r_br_y", brYAnim.targetValue)
                             putBoolean("is_g2_enabled", isG2Enabled)
                             apply()
                         }
@@ -377,6 +430,49 @@ fun CalibrationScreen(onExit: () -> Unit) {
                     elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
                 ) { Text("保存并应用", fontWeight = FontWeight.Bold) }
             }
+        }
+
+        // 教程高亮引导
+        if (tutorialActive) {
+            val steps = listOf(
+                "调节模式" to "点击可切换调节模式\n全局同步调节四角圆角一致，若您的屏幕四角曲率不同可点击按钮切换为四角独立调节，该模式下可分别调整四个角至贴合手机屏幕圆角",
+                "G2 平滑圆角" to "开启后使用 G2 连续曲率算法，圆角线条更加圆润流畅，贴合屏幕物理曲率",
+                "基础圆角半径" to "您可通过拖动滑块，点击 +/- 按钮或点击数字调起键盘输入数字调节屏幕四个角的圆角半径大小，实时预览线条变化",
+                "卡片与调节操作说明" to "长按卡片可固定，点击重置按钮可恢复默认，点击 +/- 按钮可 ± 0.1，长按 +/- 按钮可快速连续加减",
+                "横向 X 轴曲率修正" to "微调圆角在水平方向的偏移量",
+                "纵向 Y 轴曲率修正" to "微调圆角在垂直方向的偏移量"
+            )
+
+            val targetIndex = when (tutorialStep) {
+                0 -> 0
+                1 -> 1
+                2, 3 -> 2
+                4 -> 3
+                5 -> 4
+                else -> 0
+            }
+
+            TutorialOverlay(
+                currentStep = tutorialStep,
+                totalSteps = 6,
+                targetBounds = tutorialTargets[targetIndex],
+                title = steps[tutorialStep].first,
+                description = steps[tutorialStep].second,
+                onPrevious = if (tutorialStep > 0) {{ tutorialStep-- }} else null,
+                onNext = {
+                    if (tutorialStep < 5) {
+                        tutorialStep++
+                    } else {
+                        tutorialActive = false
+                        markTutorialShown(context)
+                    }
+                },
+                onSkip = {
+                    tutorialActive = false
+                    markTutorialShown(context)
+                },
+                isLastStep = tutorialStep == 5
+            )
         }
     }
 }

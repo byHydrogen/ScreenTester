@@ -289,10 +289,10 @@ fun AboutPage() {
                                 }
 
                                 // 当前版本信息
-                                Text(text = "版本 2.1", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary)
+                                Text(text = "版本 2.5", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary)
                                 Spacer(Modifier.height(6.dp))
                                 Text(
-                                    text = "新增 OOBE 圆角校准步骤 支持内嵌校准卡片（无需跳转校准车间）\n新增 主页 加入QQ交流群弹窗（仅弹一次）\n新增 关于页 加入QQ交流群卡片\n新增 校准车间页 +/- 按钮（点击后 ±0.1 ，长按可快速加减）\n新增 校准车间页 固定卡片功能（长按卡片可固定，固定后卡片不会被折叠，固定后点击/长按卡片标题栏可取消固定）\n新增 校准车间页 卡片展开/折叠时的箭头旋转动效\n优化 校准车间页 卡片圆角\n优化 主页 搜索框 输入文本动画\n优化 屏幕灰阶测试 & 屏幕彩条测试 悬浮提示胶囊圆角\n优化 触控采样率测试 触控采样率算法\n优化 触控采样率测试 “稳定峰值”卡片圆角\n修复 自定义深/浅色模式下的状态栏反色问题\n修复 了一些已知问题",
+                                    text = "新增 OOBE 圆角校准步骤/校准车间页 首次进入时的功能介绍\n新增 OOBE 界面高级动效步骤 设置页线条预览开关\n新增 设置页 界面高级动效 线条预览开关\n新增 设置页 渐变色条 自定义渐变色条颜色\n优化 设置页 渐变色条 预设方案选中时的背景颜色\n优化 OOBE 莫奈取色为青/蓝绿/蓝下的背景混色\n优化 关于页 莫奈取色为青/蓝绿/蓝下的背景混色\n优化 历史更新日志页 莫奈取色为青/蓝绿/蓝下的背景混色\n修改 OOBE 步骤4 标题文字\n修复 了一些已知问题",
                                     fontSize = 13.sp,
                                     lineHeight = 18.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant

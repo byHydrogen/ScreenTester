@@ -155,7 +155,7 @@ object DeviceUtils {
 
     // 3. 根据系统莫奈取色色相，返回和谐的页面背景渐变
     //    统一用 dynamicLightColorScheme 检测色相，确保浅色/深色模式分类一致
-    //    红/橙/棕 (0°-40° 或 330°-360°) / 黄/绿 (40°-160°) / 蓝/紫/粉 (160°-330°)
+    //    红/橙/棕 (0°-40° 或 345°-360°) / 黄/绿 (40°-160°) / 青/蓝绿 (160°-210°) / 蓝 (210°-270°) / 紫/粉 (270°-345°)
     @Composable
     fun backgroundBrush(isDark: Boolean): Brush {
         val context = LocalContext.current
@@ -168,20 +168,22 @@ object DeviceUtils {
             hsv
         )
         val hue = hsv[0]
-        val isRedOrange = hue < 40f || hue >= 345f
-        val isYellowGreen = hue in 40f..160f
 
         val colors = if (isDark) {
             when {
-                isRedOrange  -> listOf(Color(0xFF2B1720), Color(0xFF291E19), Color(0xFF2E2516))  // 深暖红：暗玫瑰/巧棕/墨橄榄
-                isYellowGreen -> listOf(Color(0xFF2B2617), Color(0xFF1E2E16), Color(0xFF172B25))  // 深暖黄绿：暗金/墨绿/深湖绿
-                else          -> listOf(Color(0xFF1E172B), Color(0xFF2D1929), Color(0xFF161E2E))  // 深冷：紫/暗红/深蓝
+                hue < 40f || hue >= 345f  -> listOf(Color(0xFF2B1720), Color(0xFF291E19), Color(0xFF2E2516))  // 深暖红：暗玫瑰/巧棕/墨橄榄
+                hue in 40f..160f          -> listOf(Color(0xFF2B2617), Color(0xFF1E2E16), Color(0xFF172B25))  // 深暖黄绿：暗金/墨绿/深湖绿
+                hue in 160f..210f         -> listOf(Color(0xFF1A2E28), Color(0xFF172B2E), Color(0xFF1E282E))  // 深青蓝绿：深海绿/暗青/深蓝灰
+                hue in 210f..270f         -> listOf(Color(0xFF1A1E2E), Color(0xFF1B1D30), Color(0xFF221E2E))  // 深蓝：藏蓝/暗蓝/深紫蓝
+                else                      -> listOf(Color(0xFF1E172B), Color(0xFF2D1929), Color(0xFF161E2E))  // 深紫粉：紫/暗红/深蓝
             }
         } else {
             when {
-                isRedOrange  -> listOf(Color(0xFFFDF0EC), Color(0xFFFCE4D6), Color(0xFFF5E6D0))  // 浅暖红：樱粉/杏橘/暖沙
-                isYellowGreen -> listOf(Color(0xFFF8F3DC), Color(0xFFEAFBE7), Color(0xFFE0F5EE))  // 浅暖黄绿：奶黄/薄荷绿/冰绿
-                else          -> listOf(Color(0xFFFDE8E9), Color(0xFFE3E1FB), Color(0xFFD6E3F9))  // 浅冷：粉/淡紫/浅蓝
+                hue < 40f || hue >= 345f  -> listOf(Color(0xFFFDF0EC), Color(0xFFFCE4D6), Color(0xFFF5E6D0))  // 浅暖红：樱粉/杏橘/暖沙
+                hue in 40f..160f          -> listOf(Color(0xFFF8F3DC), Color(0xFFEAFBE7), Color(0xFFE0F5EE))  // 浅暖黄绿：奶黄/薄荷绿/冰绿
+                hue in 160f..210f         -> listOf(Color(0xFFE6F5F0), Color(0xFFE0F0F5), Color(0xFFEEF2F5))  // 浅青蓝绿：薄荷/冰蓝/雾白
+                hue in 210f..270f         -> listOf(Color(0xFFE8ECF8), Color(0xFFE3E8FA), Color(0xFFEAE5F5))  // 浅蓝：浅蓝/冰蓝/淡紫
+                else                      -> listOf(Color(0xFFFDE8E9), Color(0xFFE3E1FB), Color(0xFFD6E3F9))  // 浅紫粉：粉/淡紫/浅蓝
             }
         }
         return Brush.linearGradient(colors = colors, start = Offset(0f, 0f), end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY))
@@ -200,20 +202,22 @@ object DeviceUtils {
             hsv
         )
         val hue = hsv[0]
-        val isRedOrange = hue < 40f || hue >= 345f
-        val isYellowGreen = hue in 40f..160f
 
         return if (isDark) {
             when {
-                isRedOrange  -> Color(0xFF2B1720)
-                isYellowGreen -> Color(0xFF2B2617)
-                else          -> Color(0xFF1E172B)
+                hue < 40f || hue >= 345f  -> Color(0xFF2B1720)
+                hue in 40f..160f          -> Color(0xFF2B2617)
+                hue in 160f..210f         -> Color(0xFF1A2E28)
+                hue in 210f..270f         -> Color(0xFF1A1E2E)
+                else                      -> Color(0xFF1E172B)
             }
         } else {
             when {
-                isRedOrange  -> Color(0xFFFDF0EC)
-                isYellowGreen -> Color(0xFFF8F3DC)
-                else          -> Color(0xFFFDE8E9)
+                hue < 40f || hue >= 345f  -> Color(0xFFFDF0EC)
+                hue in 40f..160f          -> Color(0xFFF8F3DC)
+                hue in 160f..210f         -> Color(0xFFE6F5F0)
+                hue in 210f..270f         -> Color(0xFFE8ECF8)
+                else                      -> Color(0xFFFDE8E9)
             }
         }
     }
@@ -231,20 +235,22 @@ object DeviceUtils {
             hsv
         )
         val hue = hsv[0]
-        val isRedOrange = hue < 40f || hue >= 345f
-        val isYellowGreen = hue in 40f..160f
 
         return if (isDark) {
             when {
-                isRedOrange  -> Color(0xFF30201E).copy(alpha = 0.75f)  // 暖红棕
-                isYellowGreen -> Color(0xFF242E1E).copy(alpha = 0.75f)  // 暖墨绿
-                else          -> Color(0xFF241E30).copy(alpha = 0.75f)  // 冷紫
+                hue < 40f || hue >= 345f  -> Color(0xFF30201E).copy(alpha = 0.75f)  // 暖红棕
+                hue in 40f..160f          -> Color(0xFF242E1E).copy(alpha = 0.75f)  // 暖墨绿
+                hue in 160f..210f         -> Color(0xFF1E302A).copy(alpha = 0.75f)  // 青蓝绿
+                hue in 210f..270f         -> Color(0xFF1E2230).copy(alpha = 0.75f)  // 深蓝紫
+                else                      -> Color(0xFF241E30).copy(alpha = 0.75f)  // 蓝紫
             }
         } else {
             when {
-                isRedOrange  -> Color(0xFFFFF5F0).copy(alpha = 0.85f)  // 暖米白
-                isYellowGreen -> Color(0xFFF5F8EC).copy(alpha = 0.85f)  // 暖芽白
-                else          -> Color.White.copy(alpha = 0.85f)        // 冷白
+                hue < 40f || hue >= 345f  -> Color(0xFFFFF5F0).copy(alpha = 0.85f)  // 暖米白
+                hue in 40f..160f          -> Color(0xFFF5F8EC).copy(alpha = 0.85f)  // 暖芽白
+                hue in 160f..210f         -> Color(0xFFF0F8F5).copy(alpha = 0.85f)  // 青白
+                hue in 210f..270f         -> Color(0xFFF0F2FA).copy(alpha = 0.85f)  // 蓝白
+                else                      -> Color.White.copy(alpha = 0.85f)  // 冷白
             }
         }
     }
