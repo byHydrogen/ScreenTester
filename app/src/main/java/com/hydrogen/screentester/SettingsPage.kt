@@ -508,7 +508,8 @@ fun MultiColorModePanel(
             Triple("暖色", PresetScheme.WARM, listOf(Color(android.graphics.Color.RED), Color(android.graphics.Color.rgb(255, 165, 0)), Color(android.graphics.Color.YELLOW))),
             Triple("冷色", PresetScheme.COOL, listOf(Color(0xFF0000FF), Color(0xFF00FF00), Color(android.graphics.Color.rgb(139, 0, 255)))),
             Triple("高对比", PresetScheme.HIGH_CONTRAST, listOf(Color(android.graphics.Color.RED), Color(0xFF00FF00), Color(0xFF0000FF))),
-            Triple("莫奈", PresetScheme.MONET, listOf(Color(-7981735), Color(-1845525), Color(-1254181), Color(-1845525), Color(-5431481)))
+            Triple("蓝粉", PresetScheme.BLUE_PINK, listOf(Color(0xFF72A7FF), Color(0xFFFF83B6))),
+            Triple("海洋", PresetScheme.OCEAN, listOf(Color(0xFF008BFF), Color(0xFF008B9E), Color(0xFF00779D)))
         )
 
         val currentColors = ThemeSettings.multiColorSelectedColors
@@ -925,20 +926,20 @@ fun SettingsPage() {
     var lastX by remember { mutableFloatStateOf(Float.NaN) }
 
     // 顶级动画状态管理
-    val cardAlphas = remember { List(5) { Animatable(0f) } }
-    val cardOffsetsY = remember { List(5) { Animatable(30f) } }
+    val cardAlphas = remember { List(6) { Animatable(0f) } }
+    val cardOffsetsY = remember { List(6) { Animatable(30f) } }
 
     // 统一瀑布流入场动画（仅在进入页面/切回时触发）
     LaunchedEffect(animationTrigger) {
         if (!ThemeSettings.isAnimationEnabled) {
-            for (i in 0 until 5) {
+            for (i in 0 until 6) {
                 cardAlphas[i].snapTo(1f)
                 cardOffsetsY[i].snapTo(0f)
             }
             return@LaunchedEffect
         }
 
-        for (i in 0 until 5) {
+        for (i in 0 until 6) {
             launch {
                 val alpha = cardAlphas[i]
                 val offsetY = cardOffsetsY[i]
@@ -1368,6 +1369,72 @@ fun SettingsPage() {
                                             ThemeSettings.saveSettingsLinePreviewConfig(context, it)
                                         }
                                     )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 6. 下载与更新
+            item {
+                var isDownloadExp by remember { mutableStateOf(false) }
+                val downloadArrowRotation by animateFloatAsState(targetValue = if (isDownloadExp) 180f else 0f, label = "downloadArrow")
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp)
+                        .graphicsLayer { this.alpha = cardAlphas[5].value; this.translationY = cardOffsetsY[5].value },
+                    shape = g2CardShape,
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                ) {
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clickable {
+                                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                isDownloadExp = !isDownloadExp
+                            }.padding(20.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Download, null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(16.dp))
+                            Text("下载与更新", Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                            Icon(Icons.Default.KeyboardArrowDown, null, modifier = Modifier.graphicsLayer { rotationZ = downloadArrowRotation })
+                        }
+                        AnimatedVisibility(visible = isDownloadExp) {
+                            Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 16.dp)) {
+                                HorizontalDivider(Modifier.padding(bottom = 12.dp), color = MaterialTheme.colorScheme.onSurface.copy(0.1f))
+                                Text("更新下载源", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                Spacer(Modifier.height(10.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    listOf("gitee" to "Gitee", "github" to "GitHub").forEach { (source, label) ->
+                                        val isSelected = ThemeSettings.updateDownloadSource == source
+                                        val containerColor by animateColorAsState(
+                                            targetValue = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                            animationSpec = tween(250), label = "dlColor"
+                                        )
+                                        val contentColor by animateColorAsState(
+                                            targetValue = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                                            animationSpec = tween(250), label = "dlText"
+                                        )
+                                        Card(
+                                            modifier = Modifier.weight(1f).clip(g2LargeShape).clickable {
+                                                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                                ThemeSettings.saveUpdateSource(context, source)
+                                            },
+                                            shape = g2LargeShape,
+                                            colors = CardDefaults.cardColors(containerColor = containerColor)
+                                        ) {
+                                            Text(
+                                                text = label,
+                                                modifier = Modifier.padding(vertical = 14.dp).fillMaxWidth(),
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                color = contentColor,
+                                                textAlign = TextAlign.Center,
+                                                style = MaterialTheme.typography.labelMedium
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }

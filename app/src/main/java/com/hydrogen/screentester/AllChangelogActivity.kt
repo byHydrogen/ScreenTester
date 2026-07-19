@@ -89,7 +89,7 @@ fun AllChangelogScreen(isDark: Boolean, onBack: () -> Unit) {
 
     val changelogs = remember {
         listOf(
-            "2.5" to "新增 OOBE 圆角校准步骤/校准车间页 首次进入时的功能介绍\n新增 OOBE 界面高级动效步骤 设置页线条预览开关\n新增 设置页 界面高级动效 线条预览开关\n新增 设置页 渐变色条 自定义渐变色条颜色（创建渐变方案）\n优化 设置页 渐变色条 预设方案选中时的背景颜色\n优化 OOBE 莫奈取色为青/蓝绿/蓝下的背景混色\n优化 关于页 莫奈取色为青/蓝绿/蓝下的背景混色\n优化 历史更新日志页 莫奈取色为青/蓝绿/蓝下的背景混色\n修改 OOBE 步骤4 标题文字（卡片动效 → 界面高级动效）\n修复 了一些已知问题",
+            "2.8" to "新增 支持应用内下载更新包\n新增 Gitee 更新下载源\n新增 设置页 下载与更新卡片（切换下载源）\n新增 设置页 渐变色条 蓝粉预设方案\n新增 设置页 渐变色条 海洋预设方案\n移除 设置页 渐变色条 莫奈色预设方案\n修复 黑边遮挡测试 渐变色条和设置预览时显示不一致的问题\n修改 关于页 更新日志卡片 版本更新卡片",
             "2.1" to "新增 OOBE 圆角校准步骤 支持内嵌校准卡片（无需跳转校准车间）\n新增 主页 加入QQ交流群弹窗（仅弹一次）\n新增 关于页 加入QQ交流群卡片\n新增 校准车间页 +/- 按钮（点击后 ±0.1 ，长按可快速加减）\n新增 校准车间页 固定卡片功能（长按卡片可固定，固定后卡片不会被折叠，固定后点击/长按卡片标题栏可取消固定）\n新增 校准车间页 卡片展开/折叠时的箭头旋转动效\n优化 校准车间页 卡片圆角\n优化 主页 搜索框 输入文本动画\n优化 屏幕灰阶测试 & 屏幕彩条测试 悬浮提示胶囊圆角\n优化 触控采样率测试 触控采样率算法\n优化 触控采样率测试 “稳定峰值”卡片圆角\n修复 自定义深/浅色模式下的状态栏反色问题\n修复 了一些已知问题",
             "2.0" to "新增 OOBE 开箱体验\n新增 主页 网格视图\n新增 主页 发现新版本横幅 及 更新弹窗卡片\n新增 设置页 渐变色条设置项\n新增 关于页 支持开发者卡片\n 新增 关于页 致谢卡片\n新增 赞赏开发者页面\n新增 黑边遮挡测试 支持显示渐变色条\n新增 主页 搜索栏搜索无结果提示\n新增 关于页更新日志卡片 检查更新失败提示\n修复 部分设备机型宣传名读取失败的问题\n修复 多指触控检测 状态栏及导航条未隐藏的问题\n修复 了一些已知问题\n优化 关于页 莫奈取色为黄绿/红橙棕下的背景混色\n优化 历史更新日志页 莫奈取色为黄绿/红橙棕下的背景混色\n优化 关于页 下半部分卡片淡入淡出动画\n优化 应用 流畅度",
             "1.2.9.1" to "新增 关于页 开源项目地址卡片\n新增 关于页 更新日志板块\n新增 关于页 检查更新按钮\n优化 主页 顶部渐变效果\n优化 设置页 顶部渐变效果",
@@ -211,7 +211,7 @@ fun AllChangelogScreen(isDark: Boolean, onBack: () -> Unit) {
                                         val lines = logText.split("\n")
                                         val result = mutableListOf<LogLineItem>()
                                         var idx = 0
-                                        val tags = listOf("新增", "优化", "修复", "调整", "补充", "修改")
+                                        val tags = listOf("新增", "优化", "修复", "调整", "补充", "修改", "移除")
 
                                         while (idx < lines.size) {
                                             val line = lines[idx].trim()
@@ -315,6 +315,7 @@ fun TagBadge(tag: String, isDark: Boolean, modifier: Modifier = Modifier) {
         "调整" -> if (isDark) Color(0xFF332B45) else Color(0xFFE9DFF5)
         "补充" -> if (isDark) Color(0xFF3D3228) else Color(0xFFFAE3CB)
         "修改" -> if (isDark) Color(0xFF3A2E1A) else Color(0xFFF5E1C0)
+        "移除" -> if (isDark) Color(0xFF4A2222) else Color(0xFFE8C8C8)
         else -> MaterialTheme.colorScheme.surfaceVariant
     }
     val textColor = when (tag) {
@@ -324,6 +325,7 @@ fun TagBadge(tag: String, isDark: Boolean, modifier: Modifier = Modifier) {
         "调整" -> if (isDark) Color(0xFFDBBFFE) else Color(0xFF6B4EA2)
         "补充" -> if (isDark) Color(0xFFF3C497) else Color(0xFF825525)
         "修改" -> if (isDark) Color(0xFFE8C885) else Color(0xFF8B6914)
+        "移除" -> if (isDark) Color(0xFFE8A0A0) else Color(0xFF8B4848)
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 

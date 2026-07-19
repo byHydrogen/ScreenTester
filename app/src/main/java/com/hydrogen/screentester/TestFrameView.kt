@@ -88,9 +88,10 @@ class TestFrameView @JvmOverloads constructor(
         lastSelectedColors = currentSelectedColors.toList() // 复制一份，防止外部修改引用
 
         if (currentMultiColorMode && currentSelectedColors.size >= 2 && width > 0 && height > 0) {
-            val segmentLength = if (currentSegmentLength == 0f) 1.0f else currentSegmentLength
-            val totalLength = width.coerceAtLeast(height)
-            val repeatCount = (totalLength / (segmentLength * 200)).toInt().coerceAtLeast(1)
+            val repeatCount = if (currentSegmentLength == 0f) 1 else {
+                val totalLength = width.coerceAtLeast(height)
+                (totalLength / (currentSegmentLength * 200)).toInt().coerceAtLeast(1)
+            }
             val colors = mutableListOf<Int>()
             val positions = mutableListOf<Float>()
 

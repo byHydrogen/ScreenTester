@@ -15,7 +15,8 @@ enum class PresetScheme {
     WARM,         // 暖色
     COOL,         // 冷色
     HIGH_CONTRAST, // 高对比
-    MONET         // 莫奈色
+    BLUE_PINK,    // 蓝粉
+    OCEAN         // 海洋
 }
 
 object ThemeSettings {
@@ -48,6 +49,33 @@ object ThemeSettings {
     var isMultiColorMode by mutableStateOf(false)
     var multiColorSelectedColors by mutableStateOf<List<Int>>(emptyList()) // 勾选的颜色（最多8个）
     var multiColorSegmentLength by mutableFloatStateOf(0f) // 渐变颜色长度（0表示使用默认中间值）
+
+    // 更新下载源
+    var updateDownloadSource by mutableStateOf("gitee")
+
+    fun saveUpdateSource(context: Context, source: String) {
+        if (updateDownloadSource == source) return
+        updateDownloadSource = source
+        context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putString("update_source", source).apply()
+        // 取消当前下载 + 清缓存
+        GlobalUpdateState.downloadState.cancel(context)
+        GlobalUpdateState.latestDownloadUrl = null
+        // 立即用新源重新检查更新
+        UpdateManager.checkUpdate(
+            context, isManual = true,
+            onResult = { has, ver, log, dlUrl ->
+                val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+                if (has && ver != null && UpdateManager.isVersionGreater(ver, pInfo.versionName ?: "")) {
+                    GlobalUpdateState.hasNewVersion = true
+                    GlobalUpdateState.latestVersionName = ver
+                    GlobalUpdateState.latestChangelog = log ?: ""
+                    GlobalUpdateState.latestDownloadUrl = dlUrl
+                } else {
+                    GlobalUpdateState.hasNewVersion = false
+                }
+            }
+        )
+    }
 
     fun saveConfig(context: Context, config: DarkModeConfig) {
         darkModeState = config
@@ -159,12 +187,14 @@ object ThemeSettings {
                 android.graphics.Color.GREEN,
                 android.graphics.Color.BLUE
             )
-            PresetScheme.MONET -> listOf(
-                -7981735, // Primary
-                -1845525, // Secondary
-                -1254181, // PrimaryContainer
-                -1845525, // TertiaryContainer
-                -5431481  // Error
+            PresetScheme.BLUE_PINK -> listOf(
+                0xFF72A7FF.toInt(), // 蓝
+                0xFFFF83B6.toInt(), // 粉
+            )
+            PresetScheme.OCEAN -> listOf(
+                0xFF008BFF.toInt(), // 蓝
+                0xFF008B9E.toInt(), // 青
+                0xFF00779D.toInt(), // 深蓝
             )
         }
 
@@ -236,6 +266,9 @@ object ThemeSettings {
 
         // 读取渐变颜色长度
         multiColorSegmentLength = prefs.getFloat("multi_color_segment_length", 0f)
+
+        // 读取更新下载源
+        updateDownloadSource = prefs.getString("update_source", "gitee") ?: "gitee"
 
         // 读取外观设置
         val savedDark = prefs.getString("dark_mode", DarkModeConfig.FOLLOW_SYSTEM.name)

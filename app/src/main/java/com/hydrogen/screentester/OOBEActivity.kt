@@ -62,6 +62,7 @@ class OOBEActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        DownloadState.cleanupCache(this)
         ThemeSettings.loadConfig(this)
 
         // 键盘弹起时不缩小窗口，防止 Canvas 红线被推上去

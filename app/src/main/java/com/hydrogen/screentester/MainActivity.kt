@@ -89,7 +89,7 @@ class CachedG2Shape(
     }
 }
 
-// 可缓存的 SmoothCorner Shape 类（用于 HDR 等页面，圆角公式与 CachedG2Shape 不同）
+// 可缓存的 SmoothCorner Shape 类
 class CachedSmoothCornerShape(
     private val radius: androidx.compose.ui.unit.Dp
 ) : androidx.compose.ui.graphics.Shape {
@@ -176,6 +176,8 @@ object GlobalUpdateState {
     var hasNewVersion by mutableStateOf(false)
     var latestVersionName by mutableStateOf("")
     var latestChangelog by mutableStateOf("")
+    var latestDownloadUrl by mutableStateOf<String?>(null)
+    val downloadState = DownloadState()
 }
 
 class MainActivity : ComponentActivity() {
@@ -187,7 +189,7 @@ class MainActivity : ComponentActivity() {
         // 应用启动时静默检查更新
         UpdateManager.checkUpdate(
             context = this,
-            onResult = { hasUpdate, version, changelog ->
+            onResult = { hasUpdate, version, changelog, downloadUrl ->
                 if (hasUpdate && version != null) {
                     // 确保远程版本确实更高
                     val pInfo = packageManager.getPackageInfo(packageName, 0)
@@ -196,6 +198,7 @@ class MainActivity : ComponentActivity() {
                         GlobalUpdateState.hasNewVersion = true
                         GlobalUpdateState.latestVersionName = version
                         GlobalUpdateState.latestChangelog = changelog ?: ""
+                        GlobalUpdateState.latestDownloadUrl = downloadUrl
                     }
                 }
             }

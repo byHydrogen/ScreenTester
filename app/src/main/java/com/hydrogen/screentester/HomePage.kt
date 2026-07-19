@@ -6,7 +6,9 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -373,164 +375,7 @@ fun HomePage() {
 
                     // 更新弹窗
                     if (showUpdateDialog) {
-
-                        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-                        ModalBottomSheet(
-                            onDismissRequest = { showUpdateDialog = false },
-                            containerColor = MaterialTheme.colorScheme.surface,
-                            shape = RoundedCornerShape(topStart = systemCornerRadius, topEnd = systemCornerRadius),
-                            sheetState = sheetState,
-                            scrimColor = Color.Black.copy(alpha = 0.5f),
-                            dragHandle = {
-                                Box(
-                                    modifier = Modifier
-                                        .padding(vertical = 12.dp)
-                                        .width(40.dp)
-                                        .height(4.dp)
-                                        .clip(RoundedCornerShape(2.dp))
-                                        .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
-                                        .clickable(
-                                            interactionSource = remember { MutableInteractionSource() },
-                                            indication = null,  // 禁用触摸反馈
-                                            onClick = {}
-                                        )
-                                )
-                            }
-                        ) {
-                            // 防止内容区域滑动触发弹窗收起，只有拖动手柄能控制弹窗
-                            val sheetNestedScrollConnection = remember {
-                                object : NestedScrollConnection {
-                                    override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
-                                        return if (available.y > 0) available.copy(x = 0f) else Offset.Zero
-                                    }
-                                    override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                                        return if (available.y > 0) available.copy(x = 0f) else Velocity.Zero
-                                    }
-                                }
-                            }
-
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 24.dp, vertical = 16.dp)
-                                    .nestedScroll(sheetNestedScrollConnection)
-                            ) {
-                                // 标题
-                                Text(
-                                    text = "发现新版本 ${GlobalUpdateState.latestVersionName}",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 20.sp,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    textAlign = TextAlign.Center
-                                )
-
-                                Spacer(modifier = Modifier.height(16.dp))
-
-                                // 分隔线
-                                HorizontalDivider(
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                )
-
-                                Spacer(modifier = Modifier.height(16.dp))
-
-                                // 更新日志（支持 Markdown）
-                                MarkdownText(
-                                    text = GlobalUpdateState.latestChangelog,
-                                    fontSize = 14.sp,
-                                    lineHeight = 20.sp,
-                                    textColor = MaterialTheme.colorScheme.onSurface.toArgb(),
-                                    linkColor = MaterialTheme.colorScheme.primary.toArgb(),
-                                    onLinkClick = { showLinkDialog = it },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .heightIn(max = 250.dp)
-                                        .verticalScroll(rememberScrollState())
-                                )
-
-                                Spacer(modifier = Modifier.height(24.dp))
-
-                                // 按钮
-                                Column(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    // 稍后和忽略此版本
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                    ) {
-                                        // 稍后
-                                        Button(
-                                            onClick = {
-                                                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                                scope.launch {
-                                                    sheetState.hide()
-                                                    showUpdateDialog = false
-                                                }
-                                            },
-                                            modifier = Modifier.weight(1f).height(48.dp),
-                                            shape = G2Shapes.button,
-                                            colors = ButtonDefaults.buttonColors(
-                                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        ) {
-                                            Text("稍后", fontWeight = FontWeight.Bold)
-                                        }
-
-                                        // 忽略此版本
-                                        Button(
-                                            onClick = {
-                                                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                                scope.launch {
-                                                    sheetState.hide()
-                                                    showUpdateDialog = false
-                                                    GlobalUpdateState.hasNewVersion = false
-                                                    UpdateManager.ignoreVersion(context, GlobalUpdateState.latestVersionName)
-                                                }
-                                            },
-                                            modifier = Modifier.weight(1f).height(48.dp),
-                                            shape = G2Shapes.button,
-                                            colors = ButtonDefaults.buttonColors(
-                                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        ) {
-                                            Text("忽略此版本", fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-
-                                    // 去下载
-                                    Button(
-                                        onClick = {
-                                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                            scope.launch {
-                                                sheetState.hide()
-                                                showUpdateDialog = false
-                                                val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/byHydrogen/ScreenTester/releases"))
-                                                context.startActivity(intent)
-                                            }
-                                        },
-                                        modifier = Modifier.fillMaxWidth().height(48.dp),
-                                        shape = G2Shapes.button,
-                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                                    ) {
-                                        Text("去下载", fontWeight = FontWeight.Bold)
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(16.dp))
-                            }
-                        }
-                    }
-
-                    // 链接确认弹窗
-                    if (showLinkDialog != null) {
-                        LinkConfirmDialog(
-                            url = showLinkDialog ?: "",
-                            onDismiss = { showLinkDialog = null }
-                        )
+                        UpdateSheetDialog(onDismiss = { showUpdateDialog = false })
                     }
                 }
 
@@ -866,5 +711,259 @@ fun NoResultContent(searchQuery: String) {
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
             textAlign = TextAlign.Center
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun UpdateSheetDialog(
+    onDismiss: () -> Unit
+) {
+    val view = LocalView.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val systemCornerRadius = getSystemCornerRadius()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val downloadState = GlobalUpdateState.downloadState
+    DownloadProgressPoller(downloadState)
+    // 数字上浮动画：拆分十位和个位
+    val downloadPercent by animateFloatAsState(
+        targetValue = downloadState.progress,
+        animationSpec = tween(200),
+        label = "dlProgressAnim"
+    )
+    var showLinkDialog by remember { mutableStateOf<String?>(null) }
+    var showDownloadConfirm by remember { mutableStateOf(false) }
+    var pendingDownloadUrl by remember { mutableStateOf("") }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(topStart = systemCornerRadius, topEnd = systemCornerRadius),
+        sheetState = sheetState,
+        scrimColor = Color.Black.copy(alpha = 0.5f),
+        dragHandle = {
+            Box(
+                modifier = Modifier
+                    .padding(vertical = 12.dp).width(40.dp).height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+            )
+        }
+    ) {
+        val sheetNestedScrollConnection = remember {
+            object : NestedScrollConnection {
+                override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset =
+                    if (available.y > 0) available.copy(x = 0f) else Offset.Zero
+                override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity =
+                    if (available.y > 0) available.copy(x = 0f) else Velocity.Zero
+            }
+        }
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp)
+                .nestedScroll(sheetNestedScrollConnection)
+        ) {
+            Text(
+                text = "发现新版本 ${GlobalUpdateState.latestVersionName}",
+                fontWeight = FontWeight.Bold, fontSize = 20.sp,
+                modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+            Spacer(Modifier.height(16.dp))
+            MarkdownText(
+                text = GlobalUpdateState.latestChangelog,
+                fontSize = 14.sp, lineHeight = 20.sp,
+                textColor = MaterialTheme.colorScheme.onSurface.toArgb(),
+                linkColor = MaterialTheme.colorScheme.primary.toArgb(),
+                onLinkClick = { showLinkDialog = it },
+                modifier = Modifier.fillMaxWidth().heightIn(max = 250.dp).verticalScroll(rememberScrollState())
+            )
+            // 浏览器下载
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Box(
+                    modifier = Modifier
+                        .clip(G2Shapes.button)
+                        .clickable {
+                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                            context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(UpdateManager.releasePageUrl())))
+                        }
+                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = "浏览器下载",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    )
+                }
+            }
+            Spacer(Modifier.height(1.dp))
+            // 稍后 + 忽略
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(
+                    onClick = {
+                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        scope.launch { sheetState.hide(); onDismiss() }
+                    },
+                    modifier = Modifier.weight(1f).height(48.dp), shape = G2Shapes.button,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
+                ) { Text("稍后", fontWeight = FontWeight.Bold) }
+                Button(
+                    onClick = {
+                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        scope.launch { sheetState.hide(); onDismiss() }
+                        GlobalUpdateState.hasNewVersion = false
+                        UpdateManager.ignoreVersion(context, GlobalUpdateState.latestVersionName)
+                    },
+                    modifier = Modifier.weight(1f).height(48.dp), shape = G2Shapes.button,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
+                ) { Text("忽略此版本", fontWeight = FontWeight.Bold) }
+            }
+            Spacer(Modifier.height(12.dp))
+            // 下载按钮
+            val isDownloading = downloadState.status == DownloadStatus.Downloading
+            val isPaused = downloadState.status == DownloadStatus.Paused
+            val isError = downloadState.status == DownloadStatus.Error
+            val dlModifier = when {
+                isPaused -> Modifier
+                    .fillMaxWidth().height(48.dp).clip(G2Shapes.button)
+                    .background(MaterialTheme.colorScheme.primary)
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onTap = {
+                                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                val url = GlobalUpdateState.latestDownloadUrl ?: UpdateManager.releasePageUrl()
+                                downloadState.start(context, url, "ScreenTester_${GlobalUpdateState.latestVersionName}.apk", scope)
+                            },
+                            onLongPress = {
+                                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                downloadState.cancel(context)
+                            }
+                        )
+                    }
+                isDownloading -> Modifier
+                    .fillMaxWidth().height(48.dp).clip(G2Shapes.button)
+                    .background(MaterialTheme.colorScheme.primary)
+                    .clickable {
+                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        downloadState.pause()
+                    }
+                else -> Modifier
+                    .fillMaxWidth().height(48.dp).clip(G2Shapes.button)
+                    .background(MaterialTheme.colorScheme.primary)
+                    .clickable {
+                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        when (downloadState.status) {
+                            DownloadStatus.Idle, DownloadStatus.Error -> {
+                                val url = GlobalUpdateState.latestDownloadUrl ?: UpdateManager.releasePageUrl()
+                                val cm = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+                                if (cm?.isActiveNetworkMetered == true) {
+                                    pendingDownloadUrl = url; showDownloadConfirm = true
+                                } else {
+                                    downloadState.start(context, url, "ScreenTester_${GlobalUpdateState.latestVersionName}.apk", scope)
+                                }
+                            }
+                            DownloadStatus.Done -> downloadState.install(context, "ScreenTester_${GlobalUpdateState.latestVersionName}.apk")
+                            else -> { }
+                        }
+                    }
+            }
+            Box(modifier = dlModifier, contentAlignment = Alignment.Center) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+                    AnimatedContent(
+                        targetState = when (downloadState.status) {
+                            DownloadStatus.Downloading -> "downloading"
+                            DownloadStatus.Done -> "done"
+                            DownloadStatus.Paused -> "paused"
+                            DownloadStatus.Error -> "error"
+                            else -> "idle"
+                        },
+                        transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(200)) },
+                        label = "downloadLabel"
+                    ) { state ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            when (state) {
+                                "idle" -> Text("下载", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                                "error" -> Text("下载失败", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                                "downloading" -> {
+                                    Text("已下载 ", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                                    val pct = (downloadState.progress * 100).toInt()
+                                    AnimatedContent(
+                                        targetState = pct,
+                                        transitionSpec = {
+                                            if (targetState > initialState) {
+                                                (slideInVertically { it / 4 } + fadeIn(tween(200))) togetherWith
+                                                (slideOutVertically { -it / 4 } + fadeOut(tween(200)))
+                                            } else if (targetState < initialState) {
+                                                (slideInVertically { -it / 4 } + fadeIn(tween(200))) togetherWith
+                                                (slideOutVertically { it / 4 } + fadeOut(tween(200)))
+                                            } else {
+                                                fadeIn(tween(200)) togetherWith fadeOut(tween(200))
+                                            }
+                                        },
+                                        label = "pctDigit"
+                                    ) { n ->
+                                        Text("$n", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                                    }
+                                    Text("%", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                                }
+                                "done" -> Text("安装", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                                "paused" -> Text("已暂停", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                            }
+                        }
+                    }
+                    if (isDownloading) {
+                        Spacer(Modifier.width(10.dp))
+                        CircularProgressIndicator(
+                            progress = { downloadPercent },
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+    }
+
+    // 流量下载确认弹窗
+    if (showDownloadConfirm) {
+        val confirmSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { showDownloadConfirm = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(topStart = systemCornerRadius, topEnd = systemCornerRadius),
+            sheetState = confirmSheetState,
+            scrimColor = Color.Black.copy(alpha = 0.5f),
+            dragHandle = {
+                Box(Modifier.padding(vertical = 12.dp).width(40.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)))
+            }
+        ) {
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp)) {
+                Text("流量提醒", fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+                Spacer(Modifier.height(16.dp))
+                Text("当前为移动网络，是否继续下载？", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+                Spacer(Modifier.height(24.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedButton(onClick = {
+                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        scope.launch { confirmSheetState.hide(); showDownloadConfirm = false }
+                    }, modifier = Modifier.weight(1f).height(48.dp), shape = G2Shapes.button) { Text("取消") }
+                    Button(onClick = {
+                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        val url = pendingDownloadUrl
+                        scope.launch { confirmSheetState.hide(); showDownloadConfirm = false }
+                            .invokeOnCompletion { downloadState.start(context, url, "ScreenTester_${GlobalUpdateState.latestVersionName}.apk", scope) }
+                    }, modifier = Modifier.weight(1f).height(48.dp), shape = G2Shapes.button) { Text("继续", fontWeight = FontWeight.Bold) }
+                }
+                Spacer(Modifier.height(16.dp))
+            }
+        }
+    }
+
+    // 链接确认弹窗
+    if (showLinkDialog != null) {
+        LinkConfirmDialog(url = showLinkDialog ?: "", onDismiss = { showLinkDialog = null })
     }
 }

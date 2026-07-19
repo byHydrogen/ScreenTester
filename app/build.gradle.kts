@@ -13,8 +13,8 @@ android {
         applicationId = "com.hydrogen.screentester"
         minSdk = 31
         targetSdk = 36
-        versionCode = 13
-        versionName = "2.5"
+        versionCode = 14
+        versionName = "2.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
