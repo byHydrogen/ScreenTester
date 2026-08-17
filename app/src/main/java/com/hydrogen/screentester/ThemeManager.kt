@@ -42,6 +42,16 @@ object ThemeSettings {
     // 精简黑边遮挡测试页文字开关状态
     var isCompactModeEnabled by mutableStateOf(false)
 
+    // 黑边遮挡测试长按退出：开关 + 秒数（3-20，默认5）
+    var longPressExitEnabled by mutableStateOf(true)
+    var longPressExitSeconds by mutableIntStateOf(5)
+
+    // 使用旧版曲线 (drawRoundRect)，关闭则使用 arcTo+center 精确圆弧
+    var isLegacyCurveEnabled by mutableStateOf(false)
+
+    // 是否能读取到屏幕圆角圆心数据（检测不到时自动强制旧版曲线）
+    var isCenterDataAvailable by mutableStateOf(true)
+
     // 主页测试项视图模式：true=网格模式，false=列表模式
     var isGridView by mutableStateOf(false)
 
@@ -52,6 +62,9 @@ object ThemeSettings {
 
     // 更新下载源
     var updateDownloadSource by mutableStateOf("gitee")
+
+    // 自动检查更新开关（默认开启，关闭后只能手动检查）
+    var autoCheckUpdateEnabled by mutableStateOf(true)
 
     fun saveUpdateSource(context: Context, source: String) {
         if (updateDownloadSource == source) return
@@ -80,6 +93,12 @@ object ThemeSettings {
     fun saveConfig(context: Context, config: DarkModeConfig) {
         darkModeState = config
         context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putString("dark_mode", config.name).apply()
+    }
+
+    // 保存自动检查更新开关
+    fun saveAutoCheckUpdate(context: Context, enabled: Boolean) {
+        autoCheckUpdateEnabled = enabled
+        context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putBoolean("auto_check_update_enabled", enabled).apply()
     }
 
     fun saveLineColor(context: Context, color: Int) {
@@ -117,6 +136,24 @@ object ThemeSettings {
     fun saveCompactModeConfig(context: Context, enabled: Boolean) {
         isCompactModeEnabled = enabled
         context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putBoolean("is_compact_mode_enabled", enabled).apply()
+    }
+
+    // 保存黑边遮挡测试长按退出设置
+    fun saveLongPressExitConfig(context: Context, enabled: Boolean) {
+        longPressExitEnabled = enabled
+        context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putBoolean("long_press_exit_enabled", enabled).apply()
+    }
+
+    fun saveLongPressExitSeconds(context: Context, seconds: Int) {
+        longPressExitSeconds = seconds.coerceIn(3, 20)
+        context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putInt("long_press_exit_seconds", seconds.coerceIn(3, 20)).apply()
+    }
+
+    // 保存旧版曲线设置
+    fun saveLegacyCurveConfig(context: Context, enabled: Boolean) {
+        isLegacyCurveEnabled = enabled
+        context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+            .edit().putBoolean("is_legacy_curve_enabled", enabled).apply()
     }
 
     // 保存视图模式设置
@@ -251,6 +288,21 @@ object ThemeSettings {
         // 读取精简黑边遮挡测试页文字设置
         isCompactModeEnabled = prefs.getBoolean("is_compact_mode_enabled", false)
 
+        // 读取黑边遮挡测试长按退出设置
+        longPressExitEnabled = prefs.getBoolean("long_press_exit_enabled", true)
+        longPressExitSeconds = prefs.getInt("long_press_exit_seconds", 5).coerceIn(3, 20)
+
+        // 读取旧版曲线设置
+        isLegacyCurveEnabled = prefs.getBoolean("is_legacy_curve_enabled", false)
+
+        // 读取圆心数据检测结果（首次检测前不存在该 key，检测后保存）
+        if (prefs.contains("is_center_data_available")) {
+            isCenterDataAvailable = prefs.getBoolean("is_center_data_available", true)
+            if (!isCenterDataAvailable && !isLegacyCurveEnabled) {
+                isLegacyCurveEnabled = true
+            }
+        }
+
         // 读取视图模式设置
         isGridView = prefs.getBoolean("is_grid_view", false)
 
@@ -269,6 +321,9 @@ object ThemeSettings {
 
         // 读取更新下载源
         updateDownloadSource = prefs.getString("update_source", "gitee") ?: "gitee"
+
+        // 读取自动检查更新开关
+        autoCheckUpdateEnabled = prefs.getBoolean("auto_check_update_enabled", true)
 
         // 读取外观设置
         val savedDark = prefs.getString("dark_mode", DarkModeConfig.FOLLOW_SYSTEM.name)
@@ -324,6 +379,25 @@ object ThemeSettings {
             savePresetsToLocal(context)
         } else if (presetStr.isNotEmpty()) {
             userPresets = presetStr.split(",").mapNotNull { it.toIntOrNull() }
+        }
+    }
+
+    // 检测屏幕圆角圆心数据是否可用
+    fun checkCenterDataAvailability(view: android.view.View) {
+        val context = view.context
+        val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+        if (prefs.contains("is_center_data_available")) return  // 已检测过，跳过
+
+        val insets = view.rootWindowInsets ?: return
+        val tl = insets.getRoundedCorner(android.view.RoundedCorner.POSITION_TOP_LEFT)
+        val tr = insets.getRoundedCorner(android.view.RoundedCorner.POSITION_TOP_RIGHT)
+        val br = insets.getRoundedCorner(android.view.RoundedCorner.POSITION_BOTTOM_RIGHT)
+        val bl = insets.getRoundedCorner(android.view.RoundedCorner.POSITION_BOTTOM_LEFT)
+        val available = tl?.center != null && tr?.center != null && br?.center != null && bl?.center != null
+        isCenterDataAvailable = available
+        prefs.edit().putBoolean("is_center_data_available", available).apply()
+        if (!available && !isLegacyCurveEnabled) {
+            isLegacyCurveEnabled = true
         }
     }
 

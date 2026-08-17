@@ -283,10 +283,10 @@ fun AboutPage() {
                                 }
 
                                 // 当前版本信息
-                                Text(text = "版本 2.8", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary)
+                                Text(text = "版本 2.9", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary)
                                 Spacer(Modifier.height(6.dp))
                                 Text(
-                                    text = "新增 支持应用内下载更新包\n新增 Gitee 更新下载源\n新增 设置页 下载与更新卡片（切换下载源）\n新增 设置页 渐变色条 蓝粉预设方案\n新增 设置页 渐变色条 海洋预设方案\n移除 设置页 渐变色条 莫奈色预设方案\n修复 黑边遮挡测试 渐变色条和设置预览时显示不一致的问题\n修改 关于页 更新日志卡片 版本更新卡片",
+                                    text = "新增 新版「系统默认曲线」\n新增 设置页 自定义黑边遮挡测试 使用旧版曲线 开关\n新增 设置页 自定义黑边遮挡测试 长按退出 开关\n新增 设置页 自定义黑边遮挡测试 自定义退出时长 滑块\n新增 设置页 下载与更新 自动检查更新开关\n优化 主页 首次启动时的「加入QQ交流群」弹窗（改为显示横幅，30秒后自动消失）\n修复 系统导航为导航键时 底栏被遮挡的问题\n修复 了一些已知问题",
                                     fontSize = 13.sp,
                                     lineHeight = 18.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant

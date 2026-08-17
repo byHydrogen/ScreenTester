@@ -136,6 +136,11 @@ fun OOBEContent(onComplete: () -> Unit, onSkip: () -> Unit) {
     val calibBLY = remember { Animatable(calibPrefs.getFloat("r_bl_y", 0f)) }
     val calibBRY = remember { Animatable(calibPrefs.getFloat("r_br_y", 0f)) }
 
+    // 启动时检测圆心数据可用性（校准步骤之前）
+    LaunchedEffect(Unit) {
+        ThemeSettings.checkCenterDataAvailability(view)
+    }
+
     LaunchedEffect(pagerState.currentPage) {
         OOBEState.currentStep = pagerState.currentPage
     }
@@ -363,6 +368,7 @@ fun OOBEContent(onComplete: () -> Unit, onSkip: () -> Unit) {
         OOBELiveBorderPreview(
             pagerState, realtimeThickness, realtimeSegmentLength, isDragging,
             isG2Enabled = isG2Enabled,
+            isLegacyCurveEnabled = ThemeSettings.isLegacyCurveEnabled,
             primaryColor = oobeBlendedScheme.primary,
             offTLX = calibTLX.value, offTLY = calibTLY.value,
             offTRX = calibTRX.value, offTRY = calibTRY.value,
@@ -1244,6 +1250,7 @@ fun OOBELiveBorderPreview(
     realtimeSegmentLength: Float = if (ThemeSettings.multiColorSegmentLength == 0f) 1f else ThemeSettings.multiColorSegmentLength,
     isDragging: Boolean = false,
     isG2Enabled: Boolean = false,
+    isLegacyCurveEnabled: Boolean = false,
     primaryColor: Color = MaterialTheme.colorScheme.primary,
     fixedAlpha: Float? = null,
     offTLX: Float = 0f, offTLY: Float = 0f,
@@ -1322,6 +1329,37 @@ fun OOBELiveBorderPreview(
             path.cubicTo(L + c * blX, B, L, B - c * blY, L, B - p * blY)
             path.lineTo(L, T + p * tlY)
             path.cubicTo(L, T + c * tlY, L + c * tlX, T, L + p * tlX, T)
+            path.close()
+        } else if (!ThemeSettings.useCustomRadius && !isLegacyCurveEnabled) {
+            // === arcTo+center: 用圆心精确定位每个角的圆弧 ===
+            val act = context as? android.app.Activity
+            val insets = act?.window?.decorView?.rootWindowInsets
+            val tlRC = insets?.getRoundedCorner(android.view.RoundedCorner.POSITION_TOP_LEFT)
+            val trRC = insets?.getRoundedCorner(android.view.RoundedCorner.POSITION_TOP_RIGHT)
+            val brRC = insets?.getRoundedCorner(android.view.RoundedCorner.POSITION_BOTTOM_RIGHT)
+            val blRC = insets?.getRoundedCorner(android.view.RoundedCorner.POSITION_BOTTOM_LEFT)
+
+            fun cx(rc: android.view.RoundedCorner?, fallback: Float): Float =
+                rc?.center?.x?.toFloat() ?: fallback
+            fun cy(rc: android.view.RoundedCorner?, fallback: Float): Float =
+                rc?.center?.y?.toFloat() ?: fallback
+            fun rx(rc: android.view.RoundedCorner?): Float =
+                ((rc?.radius?.toFloat() ?: 100f) - offset).coerceAtLeast(0f)
+
+            val tlCX = cx(tlRC, L + 100f); val tlCY = cy(tlRC, T + 100f); val tlR = rx(tlRC)
+            val trCX = cx(trRC, R - 100f); val trCY = cy(trRC, T + 100f); val trR = rx(trRC)
+            val brCX = cx(brRC, R - 100f); val brCY = cy(brRC, B - 100f); val brR = rx(brRC)
+            val blCX = cx(blRC, L + 100f); val blCY = cy(blRC, B - 100f); val blR = rx(blRC)
+
+            path.moveTo(tlCX, T)
+            path.lineTo(trCX, T)
+            path.arcTo(androidx.compose.ui.geometry.Rect(trCX - trR, trCY - trR, trCX + trR, trCY + trR), 270f, 90f, false)
+            path.lineTo(R, brCY)
+            path.arcTo(androidx.compose.ui.geometry.Rect(brCX - brR, brCY - brR, brCX + brR, brCY + brR), 0f, 90f, false)
+            path.lineTo(blCX, B)
+            path.arcTo(androidx.compose.ui.geometry.Rect(blCX - blR, blCY - blR, blCX + blR, blCY + blR), 90f, 90f, false)
+            path.lineTo(L, tlCY)
+            path.arcTo(androidx.compose.ui.geometry.Rect(tlCX - tlR, tlCY - tlR, tlCX + tlR, tlCY + tlR), 180f, 90f, false)
             path.close()
         } else {
             path.addRoundRect(

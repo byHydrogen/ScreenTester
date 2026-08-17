@@ -186,23 +186,25 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         ThemeSettings.loadConfig(this)
 
-        // 应用启动时静默检查更新
-        UpdateManager.checkUpdate(
-            context = this,
-            onResult = { hasUpdate, version, changelog, downloadUrl ->
-                if (hasUpdate && version != null) {
-                    // 确保远程版本确实更高
-                    val pInfo = packageManager.getPackageInfo(packageName, 0)
-                    val localVersion = pInfo.versionName ?: ""
-                    if (UpdateManager.isVersionGreater(version, localVersion)) {
-                        GlobalUpdateState.hasNewVersion = true
-                        GlobalUpdateState.latestVersionName = version
-                        GlobalUpdateState.latestChangelog = changelog ?: ""
-                        GlobalUpdateState.latestDownloadUrl = downloadUrl
+        // 应用启动时静默检查更新（可在设置里关闭）
+        if (ThemeSettings.autoCheckUpdateEnabled) {
+            UpdateManager.checkUpdate(
+                context = this,
+                onResult = { hasUpdate, version, changelog, downloadUrl ->
+                    if (hasUpdate && version != null) {
+                        // 确保远程版本确实更高
+                        val pInfo = packageManager.getPackageInfo(packageName, 0)
+                        val localVersion = pInfo.versionName ?: ""
+                        if (UpdateManager.isVersionGreater(version, localVersion)) {
+                            GlobalUpdateState.hasNewVersion = true
+                            GlobalUpdateState.latestVersionName = version
+                            GlobalUpdateState.latestChangelog = changelog ?: ""
+                            GlobalUpdateState.latestDownloadUrl = downloadUrl
+                        }
                     }
                 }
-            }
-        )
+            )
+        }
 
         setContent {
             ScreenTesterTheme {
@@ -221,25 +223,13 @@ class MainActivity : ComponentActivity() {
                             isAppearanceLightNavigationBars = !isDark
                         }
                     }
+                    // 启动时检测圆心数据可用性（仅首次，结果存 SharedPreferences）
+                    LaunchedEffect(Unit) {
+                        ThemeSettings.checkCenterDataAvailability(view)
+                    }
                 }
 
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    // 首次启动弹出 QQ 加群弹窗（仅弹一次）
-                    val context = LocalContext.current
-                    val prefs = remember { context.getSharedPreferences("app_prefs", MODE_PRIVATE) }
-                    var showQQDialog by remember {
-                        mutableStateOf(!prefs.getBoolean("qq_group_dialog_shown", false))
-                    }
-
-                    if (showQQDialog) {
-                        QQGroupDialog(
-                            onDismiss = {
-                                showQQDialog = false
-                                prefs.edit().putBoolean("qq_group_dialog_shown", true).apply()
-                            }
-                        )
-                    }
-
                     MainContainer()
                 }
             }
@@ -275,10 +265,11 @@ fun MainContainer() {
             }
         }
 
+        val navBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
         AnimatedScrubbingNavBar(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 32.dp),
+                .padding(bottom = maxOf(32.dp, navBarInset)),
             currentPage = pagerState.currentPage,
             onDrag = { deltaX ->
                 // 手指往右(deltaX为正)，Pager向左滚(-deltaX)，实现同步

@@ -31,6 +31,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
@@ -982,7 +983,8 @@ fun SettingsPage() {
                 ThemeSettings.testLineColor,
                 ThemeSettings.isMultiColorMode,
                 ThemeSettings.multiColorSelectedColors,
-                realtimeSegmentLength
+                realtimeSegmentLength,
+                ThemeSettings.isLegacyCurveEnabled
             )
         }.drop(1).collect {
             previewVisible = true
@@ -1229,6 +1231,58 @@ fun SettingsPage() {
                                     }
                                 }
 
+                                Spacer(Modifier.height(16.dp))
+
+                                // 使用旧版曲线 (仅系统默认模式)
+                                val legacyDisabled = ThemeSettings.useCustomRadius || !ThemeSettings.isCenterDataAvailable
+                                val legacyAlpha by animateFloatAsState(
+                                    targetValue = if (legacyDisabled) 0.4f else 1f,
+                                    animationSpec = tween(300),
+                                    label = "legacyAlpha"
+                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.alpha(legacyAlpha)
+                                ) {
+                                    Column(modifier = Modifier.weight(1f).animateContentSize()) {
+                                        Text("使用旧版曲线", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                        AnimatedVisibility(
+                                            visible = !ThemeSettings.isCenterDataAvailable,
+                                            enter = slideInVertically(tween(300)) + fadeIn(tween(300)),
+                                            exit = slideOutVertically(tween(300)) + fadeOut(tween(300))
+                                        ) {
+                                            Text(
+                                                "设备不支持新曲线，已自动启用旧版曲线",
+                                                fontSize = 12.sp,
+                                                lineHeight = 18.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.padding(top = 4.dp)
+                                            )
+                                        }
+                                        AnimatedVisibility(
+                                            visible = ThemeSettings.isCenterDataAvailable && ThemeSettings.useCustomRadius,
+                                            enter = slideInVertically(tween(300)) + fadeIn(tween(300)),
+                                            exit = slideOutVertically(tween(300)) + fadeOut(tween(300))
+                                        ) {
+                                            Text(
+                                                "仅系统默认模式生效，请先关闭「自定义圆角半径」",
+                                                fontSize = 12.sp,
+                                                lineHeight = 18.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.padding(top = 4.dp)
+                                            )
+                                        }
+                                    }
+                                    Switch(
+                                        checked = ThemeSettings.isLegacyCurveEnabled,
+                                        enabled = !legacyDisabled,
+                                        onCheckedChange = { enabled ->
+                                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                            ThemeSettings.saveLegacyCurveConfig(context, enabled)
+                                        }
+                                    )
+                                }
+
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
 
                                 // 纯净模式
@@ -1270,6 +1324,120 @@ fun SettingsPage() {
                                             ThemeSettings.saveCompactModeConfig(context, it)
                                         }
                                     )
+                                }
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+
+                                // 长按退出
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("长按退出", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                        Text("关闭后只能按返回键退出黑边遮挡测试", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    Switch(
+                                        checked = ThemeSettings.longPressExitEnabled,
+                                        onCheckedChange = {
+                                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                            ThemeSettings.saveLongPressExitConfig(context, it)
+                                        }
+                                    )
+                                }
+
+                                // 长按退出秒数
+                                AnimatedVisibility(visible = ThemeSettings.longPressExitEnabled) {
+                                    Column(Modifier.padding(top = 12.dp)) {
+                                        val exitScope = rememberCoroutineScope()
+                                        val exitFocusManager = LocalFocusManager.current
+                                        val exitAnim = remember { Animatable(ThemeSettings.longPressExitSeconds.toFloat()) }
+                                        var exitInput by remember { mutableStateOf(ThemeSettings.longPressExitSeconds.toString()) }
+                                        var isExitFocused by remember { mutableStateOf(false) }
+
+                                        LaunchedEffect(exitAnim.value) {
+                                            if (!isExitFocused) {
+                                                exitInput = exitAnim.value.roundToInt().toString()
+                                            }
+                                            ThemeSettings.saveLongPressExitSeconds(context, exitAnim.value.roundToInt())
+                                        }
+
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text("长按退出时长", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                            // 重置按钮
+                                            IconButton(
+                                                onClick = {
+                                                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                                    exitInput = "5"
+                                                    exitScope.launch {
+                                                        exitAnim.animateTo(
+                                                            targetValue = 5f,
+                                                            animationSpec = tween(durationMillis = 800, easing = FastOutSlowInEasing)
+                                                        )
+                                                    }
+                                                },
+                                                modifier = Modifier.size(30.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Refresh,
+                                                    contentDescription = "重置",
+                                                    modifier = Modifier.size(16.dp),
+                                                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                                                )
+                                            }
+
+                                            Spacer(Modifier.weight(1f))
+
+                                            // 数值编辑框
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier
+                                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
+                                                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                                            ) {
+                                                BasicTextField(
+                                                    value = exitInput,
+                                                    onValueChange = { newVal ->
+                                                        if (newVal.length <= 2) {
+                                                            val num = newVal.toIntOrNull()
+                                                            if (num != null) {
+                                                                if (num > 20) {
+                                                                    exitInput = "20"
+                                                                    exitScope.launch { exitAnim.animateTo(20f, tween(400)) }
+                                                                } else {
+                                                                    exitInput = newVal
+                                                                    exitScope.launch { exitAnim.animateTo(num.toFloat().coerceAtLeast(3f), tween(400)) }
+                                                                }
+                                                            } else if (newVal.isEmpty()) {
+                                                                exitInput = ""
+                                                            }
+                                                        }
+                                                    },
+                                                    modifier = Modifier
+                                                        .width(IntrinsicSize.Min)
+                                                        .widthIn(min = 35.dp)
+                                                        .onFocusChanged { isExitFocused = it.isFocused },
+                                                    textStyle = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary, textAlign = TextAlign.Center),
+                                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                                                    keyboardActions = KeyboardActions(onDone = { exitFocusManager.clearFocus() }),
+                                                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary)
+                                                )
+                                                Text("秒", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 2.dp))
+                                            }
+                                        }
+
+                                        Spacer(Modifier.height(8.dp))
+
+                                        HapticSlider(
+                                            l = "",
+                                            c = MaterialTheme.colorScheme.primary,
+                                            v = (exitAnim.value - 3f) / 17f
+                                        ) {
+                                            exitFocusManager.clearFocus()
+                                            val newValue = it * 17f + 3f
+                                            exitScope.launch { exitAnim.snapTo(newValue) }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1404,6 +1572,24 @@ fun SettingsPage() {
                         AnimatedVisibility(visible = isDownloadExp) {
                             Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 16.dp)) {
                                 HorizontalDivider(Modifier.padding(bottom = 12.dp), color = MaterialTheme.colorScheme.onSurface.copy(0.1f))
+
+                                // 自动检查更新
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("自动检查更新", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                        Text("关闭后只能在关于页手动检查更新", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    Switch(
+                                        checked = ThemeSettings.autoCheckUpdateEnabled,
+                                        onCheckedChange = {
+                                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                            ThemeSettings.saveAutoCheckUpdate(context, it)
+                                        }
+                                    )
+                                }
+
+                                Spacer(Modifier.height(16.dp))
+
                                 Text("更新下载源", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                                 Spacer(Modifier.height(10.dp))
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1477,6 +1663,7 @@ fun SettingsPage() {
                 realtimeSegmentLength = realtimeSegmentLength,
                 isDragging = isDragging,
                 isG2Enabled = isG2Enabled,
+                isLegacyCurveEnabled = ThemeSettings.isLegacyCurveEnabled,
                 offTLX = prefs.getFloat("r_tl_x", 0f), offTLY = prefs.getFloat("r_tl_y", 0f),
                 offTRX = prefs.getFloat("r_tr_x", 0f), offTRY = prefs.getFloat("r_tr_y", 0f),
                 offBLX = prefs.getFloat("r_bl_x", 0f), offBLY = prefs.getFloat("r_bl_y", 0f),

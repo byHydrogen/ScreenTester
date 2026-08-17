@@ -118,13 +118,15 @@ class TestActivity : ComponentActivity() {
     override fun onTouchEvent(event: MotionEvent): Boolean {
         gestureDetector?.onTouchEvent(event)
 
-        // 长按倒计时逻辑
+        // 长按倒计时逻辑（设置里可关闭）
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
-                currentTimer = 5
-                testView?.remainingSeconds = currentTimer
-                handler.removeCallbacks(timerRunnable)
-                handler.postDelayed(timerRunnable, 1000)
+                if (ThemeSettings.longPressExitEnabled) {
+                    currentTimer = ThemeSettings.longPressExitSeconds
+                    testView?.remainingSeconds = currentTimer
+                    handler.removeCallbacks(timerRunnable)
+                    handler.postDelayed(timerRunnable, 1000)
+                }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 handler.removeCallbacks(timerRunnable)

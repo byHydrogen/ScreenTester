@@ -1,5 +1,6 @@
 package com.hydrogen.screentester
 
+import android.content.Context
 import android.content.Intent
 import android.view.HapticFeedbackConstants
 import androidx.compose.animation.*
@@ -380,6 +381,81 @@ fun HomePage() {
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            // QQ加群横幅（首次进入主页显示，仅一次，30秒未点击自动消失）
+            item {
+                val qqPrefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+                var showQQBanner by remember { mutableStateOf(!qqPrefs.getBoolean("qq_group_dialog_shown", false)) }
+                var showQQDialog by remember { mutableStateOf(false) }
+
+                val markQQShown = {
+                    showQQBanner = false
+                    qqPrefs.edit().putBoolean("qq_group_dialog_shown", true).apply()
+                }
+
+                LaunchedEffect(showQQBanner) {
+                    if (showQQBanner) {
+                        delay(30_000)
+                        markQQShown()
+                    }
+                }
+
+                AnimatedVisibility(
+                    visible = showQQBanner,
+                    enter = expandVertically(animationSpec = tween(300, easing = FastOutSlowInEasing)) + fadeIn(tween(300)),
+                    exit = shrinkVertically(animationSpec = tween(300, easing = FastOutSlowInEasing)) + fadeOut(tween(300))
+                ) {
+                    Column {
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(G2Shapes.card)
+                                .clickable {
+                                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                    showQQDialog = true
+                                },
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
+                            shape = G2Shapes.card
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.QuestionAnswer,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "加入QQ交流群",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                    Text(
+                                        text = "群号：1035224343",
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                                    )
+                                }
+                                Icon(
+                                    imageVector = Icons.Default.ChevronRight,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                }
+
+                if (showQQDialog) {
+                    QQGroupDialog(onDismiss = { showQQDialog = false; markQQShown() })
+                }
             }
 
             // ==================== 【视觉显示类测试】 ====================

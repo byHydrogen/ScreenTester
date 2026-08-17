@@ -239,11 +239,16 @@ class TestFrameView @JvmOverloads constructor(
             }
         } else {
             val insets = rootWindowInsets
-            val systemR = insets?.getRoundedCorner(RoundedCorner.POSITION_TOP_LEFT)?.radius?.toFloat() ?: 100f
-            canvas.drawRoundRect(rect, systemR, systemR, linePaint)
+            if (!ThemeSettings.isLegacyCurveEnabled && insets != null) {
+                drawArcToSystemDefault(canvas, rect, insets)
+            } else {
+                val systemR = insets?.getRoundedCorner(RoundedCorner.POSITION_TOP_LEFT)?.radius?.toFloat() ?: 100f
+                canvas.drawRoundRect(rect, systemR, systemR, linePaint)
+            }
 
             // 精简模式下隐藏系统默认圆角半径参数文本
             if (!ThemeSettings.isCompactModeEnabled) {
+                val systemR = insets?.getRoundedCorner(RoundedCorner.POSITION_TOP_LEFT)?.radius?.toFloat() ?: 100f
                 textPaint.textSize = 32f
                 textPaint.alpha = 100
                 canvas.drawText("圆角半径(系统默认): ${systemR.toInt()} px | 线条粗细: ${String.format("%.1f", currentThickness)} px", centerX, h - 120f, textPaint)
@@ -286,12 +291,18 @@ class TestFrameView @JvmOverloads constructor(
                 canvas.drawText("@byHydrogen", centerX, centerY + 140f, textPaint)
             }
         } else {
+            // 长按退出提示文案：随设置动态变化
+            val exitHint = if (ThemeSettings.longPressExitEnabled) {
+                "按返回键 或 长按${ThemeSettings.longPressExitSeconds}秒 退出"
+            } else {
+                "按返回键退出"
+            }
             if (remainingSeconds > 0) {
                 if (countdownStartTime > 0L && elapsed < totalDuration) {
                     if (elapsed < 100f) {
                         val outProgress = (1f - (elapsed / 100f)).coerceIn(0f, 1f)
                         textPaint.alpha = (140 * outProgress).toInt()
-                        canvas.drawText("按返回键 或 长按5秒 退出", centerX, centerY + 140f, textPaint)
+                        canvas.drawText(exitHint, centerX, centerY + 140f, textPaint)
                     } else {
                         val inProgress = ((elapsed - 100f) / 150f).coerceIn(0f, 1f)
                         textPaint.alpha = (140 * inProgress).toInt()
@@ -303,7 +314,7 @@ class TestFrameView @JvmOverloads constructor(
                 }
             } else {
                 textPaint.alpha = 140
-                canvas.drawText("按返回键 或 长按5秒 退出", centerX, centerY + 140f, textPaint)
+                canvas.drawText(exitHint, centerX, centerY + 140f, textPaint)
             }
         }
     }
@@ -399,5 +410,50 @@ class TestFrameView @JvmOverloads constructor(
         textPaint.isFakeBoldText = false
         textPaint.alpha = 100
         canvas.drawText("@byHydrogen", centerX, h - 30f, textPaint)
+    }
+
+    private fun drawArcToSystemDefault(
+        canvas: Canvas,
+        rect: RectF,
+        insets: android.view.WindowInsets
+    ) {
+        val tl = insets.getRoundedCorner(RoundedCorner.POSITION_TOP_LEFT)
+        val tr = insets.getRoundedCorner(RoundedCorner.POSITION_TOP_RIGHT)
+        val br = insets.getRoundedCorner(RoundedCorner.POSITION_BOTTOM_RIGHT)
+        val bl = insets.getRoundedCorner(RoundedCorner.POSITION_BOTTOM_LEFT)
+
+        val L = rect.left; val T = rect.top; val R = rect.right; val B = rect.bottom
+        val adj = rect.left  // = currentThickness / 2f
+
+        fun cx(rc: RoundedCorner?, fallback: Float): Float =
+            rc?.center?.x?.toFloat() ?: fallback
+        fun cy(rc: RoundedCorner?, fallback: Float): Float =
+            rc?.center?.y?.toFloat() ?: fallback
+        fun rx(rc: RoundedCorner?): Float =
+            ((rc?.radius?.toFloat() ?: 100f) - adj).coerceAtLeast(0f)
+
+        val tlCX = cx(tl, L + 100f); val tlCY = cy(tl, T + 100f); val tlR = rx(tl)
+        val trCX = cx(tr, R - 100f); val trCY = cy(tr, T + 100f); val trR = rx(tr)
+        val brCX = cx(br, R - 100f); val brCY = cy(br, B - 100f); val brR = rx(br)
+        val blCX = cx(bl, L + 100f); val blCY = cy(bl, B - 100f); val blR = rx(bl)
+
+        borderPath.reset()
+
+        // top edge → top-right arcTo
+        borderPath.moveTo(tlCX, T)
+        borderPath.lineTo(trCX, T)
+        borderPath.arcTo(trCX - trR, trCY - trR, trCX + trR, trCY + trR, 270f, 90f, false)
+        // right edge → bottom-right arcTo
+        borderPath.lineTo(R, brCY)
+        borderPath.arcTo(brCX - brR, brCY - brR, brCX + brR, brCY + brR, 0f, 90f, false)
+        // bottom edge → bottom-left arcTo
+        borderPath.lineTo(blCX, B)
+        borderPath.arcTo(blCX - blR, blCY - blR, blCX + blR, blCY + blR, 90f, 90f, false)
+        // left edge → top-left arcTo
+        borderPath.lineTo(L, tlCY)
+        borderPath.arcTo(tlCX - tlR, tlCY - tlR, tlCX + tlR, tlCY + tlR, 180f, 90f, false)
+        borderPath.close()
+
+        canvas.drawPath(borderPath, linePaint)
     }
 }
