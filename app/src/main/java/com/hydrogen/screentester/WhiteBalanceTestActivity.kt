@@ -31,12 +31,8 @@ class WhiteBalanceTestActivity : ComponentActivity() {
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
 
-        // 2. 亮度逻辑
-        if (ThemeSettings.isMaxBrightnessEnabled) {
-            val lp = window.attributes
-            lp.screenBrightness = ThemeSettings.testBrightnessValue
-            window.attributes = lp
-        }
+        // 2. 测试窗口设置（亮度 + 屏幕常亮）
+        applyTestWindowSettings()
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() { finish() }

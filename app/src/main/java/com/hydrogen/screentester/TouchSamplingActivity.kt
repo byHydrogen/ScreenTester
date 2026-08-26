@@ -41,11 +41,7 @@ class TouchSamplingActivity : ComponentActivity() {
         controller.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
 
-        if (ThemeSettings.isMaxBrightnessEnabled) {
-            val lp = window.attributes
-            lp.screenBrightness = ThemeSettings.testBrightnessValue
-            window.attributes = lp
-        }
+        applyTestWindowSettings()
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() { finish() }

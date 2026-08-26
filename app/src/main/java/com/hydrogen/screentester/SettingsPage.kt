@@ -157,14 +157,22 @@ fun ColorPickerSection(
                             // 只有当输入为空，或者是合法数字时才处理
                             val num = newVal.toFloatOrNull()
                             if (num != null) {
-                                if (num > 15f) {
-                                    // 如果输入的数大于 15
-                                    thicknessInput = "15"
-                                    scope.launch { thicknessAnim.animateTo(15f, tween(400)) } // 滑块滑到 15
-                                } else {
-                                    // 正常范围：1-15 之间
-                                    thicknessInput = newVal
-                                    scope.launch { thicknessAnim.animateTo(num, tween(400)) }
+                                when {
+                                    num > 15f -> {
+                                        // 如果输入的数大于 15
+                                        thicknessInput = "15"
+                                        scope.launch { thicknessAnim.animateTo(15f, tween(400)) } // 滑块滑到 15
+                                    }
+                                    num < 1f -> {
+                                        // 下限 1px
+                                        thicknessInput = "1"
+                                        scope.launch { thicknessAnim.animateTo(1f, tween(400)) }
+                                    }
+                                    else -> {
+                                        // 正常范围：1-15 之间
+                                        thicknessInput = newVal
+                                        scope.launch { thicknessAnim.animateTo(num, tween(400)) }
+                                    }
                                 }
                             } else if (newVal.isEmpty()) {
                                 // 允许删空
@@ -1718,6 +1726,22 @@ fun BrightnessSettingsContent() {
                 if (isDragged) { SideEffect { focusManager.clearFocus() } }
                 HapticSlider("", MaterialTheme.colorScheme.primary, brightnessAnim.value, interactionSource = interactionSource) { newVal -> scope.launch { brightnessAnim.snapTo(newVal) } }
             }
+        }
+
+        // 测试页屏幕常亮开关
+        HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("测试页屏幕常亮", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text("开启后进入除「HDR检测」外的测试页将保持屏幕不熄灭", fontSize = 12.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,modifier = Modifier.padding(top = 4.dp))
+            }
+            Switch(
+                checked = ThemeSettings.isKeepScreenOnEnabled,
+                onCheckedChange = {
+                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    ThemeSettings.saveKeepScreenOn(context, it)
+                }
+            )
         }
     }
 }

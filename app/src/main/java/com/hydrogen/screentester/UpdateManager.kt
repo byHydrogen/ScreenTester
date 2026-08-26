@@ -64,10 +64,12 @@ object UpdateManager {
 
                 val tagName = json.getString("tag_name").replace("v", "", ignoreCase = true)
                 val body = json.optString("body", "")
-                // 提取 APK 直链
+                // 提取 APK 直链（只认 .apk 后缀，跳过 checksum 等其他附件）
                 val assets = json.optJSONArray("assets")
                 val downloadUrl = if (assets != null && assets.length() > 0) {
-                    assets.getJSONObject(0).optString("browser_download_url", "").ifEmpty { null }
+                    (0 until assets.length())
+                        .mapNotNull { i -> assets.optJSONObject(i)?.optString("browser_download_url", "") }
+                        .firstOrNull { it.isNotEmpty() && it.endsWith(".apk", ignoreCase = true) }
                 } else null
 
                 val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)

@@ -59,11 +59,7 @@ class TestActivity : ComponentActivity() {
         controller.hide(WindowInsetsCompat.Type.systemBars())
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
 
-        if (ThemeSettings.isMaxBrightnessEnabled) {
-            val lp = window.attributes
-            lp.screenBrightness = ThemeSettings.testBrightnessValue
-            window.attributes = lp
-        }
+        applyTestWindowSettings()
 
         val rootLayout = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)

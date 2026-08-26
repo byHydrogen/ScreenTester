@@ -24,6 +24,9 @@ object ThemeSettings {
     var testLineColor by mutableIntStateOf(android.graphics.Color.WHITE)
     var isMaxBrightnessEnabled by mutableStateOf(false)
     var testBrightnessValue by mutableFloatStateOf(1.0f)
+
+    // 测试页屏幕常亮开关
+    var isKeepScreenOnEnabled by mutableStateOf(false)
     var userPresets by mutableStateOf<List<Int>>(emptyList())
     var useCustomRadius by mutableStateOf(false)
     var radiusTL by mutableFloatStateOf(-1f)
@@ -116,10 +119,16 @@ object ThemeSettings {
         context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putFloat("test_brightness_val", value).apply()
     }
 
+    // 保存测试页屏幕常亮开关
+    fun saveKeepScreenOn(context: Context, enabled: Boolean) {
+        isKeepScreenOnEnabled = enabled
+        context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putBoolean("keep_screen_on_enabled", enabled).apply()
+    }
+
     // 保存线条粗细
     fun saveLineThickness(context: Context, value: Float) {
-        testLineThickness = value
-        context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putFloat("line_thickness", value).apply()
+        testLineThickness = value.coerceIn(1f, 15f)
+        context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putFloat("line_thickness", testLineThickness).apply()
     }
 
     fun saveAnimationConfig(context: Context, enabled: Boolean) {
@@ -355,8 +364,11 @@ object ThemeSettings {
         isMaxBrightnessEnabled = prefs.getBoolean("max_brightness", false)
         testBrightnessValue = prefs.getFloat("test_brightness_val", 1.0f)
 
+        // 读取测试页屏幕常亮开关
+        isKeepScreenOnEnabled = prefs.getBoolean("keep_screen_on_enabled", false)
+
         // 读取线条粗细设置
-        testLineThickness = prefs.getFloat("line_thickness", 5f)
+        testLineThickness = prefs.getFloat("line_thickness", 5f).coerceIn(1f, 15f)
 
         // 每次打开 App 自动恢复上次调好的圆角数据
         useCustomRadius = prefs.getBoolean("use_custom_radius", false)

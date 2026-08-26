@@ -1,10 +1,16 @@
 package com.hydrogen.screentester
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.view.HapticFeedbackConstants
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -802,6 +808,20 @@ fun UpdateSheetDialog(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val downloadState = GlobalUpdateState.downloadState
     DownloadProgressPoller(downloadState)
+
+    // Android 13+ 通知权限：开始下载前请求一次
+    val notifPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
+
+    fun startDownloadWithPermission(url: String) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        downloadState.start(context, url, "ScreenTester_${GlobalUpdateState.latestVersionName}.apk")
+    }
     // 数字上浮动画：拆分十位和个位
     val downloadPercent by animateFloatAsState(
         targetValue = downloadState.progress,
@@ -908,8 +928,7 @@ fun UpdateSheetDialog(
                         detectTapGestures(
                             onTap = {
                                 view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                val url = GlobalUpdateState.latestDownloadUrl ?: UpdateManager.releasePageUrl()
-                                downloadState.start(context, url, "ScreenTester_${GlobalUpdateState.latestVersionName}.apk", scope)
+                                startDownloadWithPermission(GlobalUpdateState.latestDownloadUrl ?: UpdateManager.releasePageUrl())
                             },
                             onLongPress = {
                                 view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
@@ -936,7 +955,7 @@ fun UpdateSheetDialog(
                                 if (cm?.isActiveNetworkMetered == true) {
                                     pendingDownloadUrl = url; showDownloadConfirm = true
                                 } else {
-                                    downloadState.start(context, url, "ScreenTester_${GlobalUpdateState.latestVersionName}.apk", scope)
+                                    startDownloadWithPermission(url)
                                 }
                             }
                             DownloadStatus.Done -> downloadState.install(context, "ScreenTester_${GlobalUpdateState.latestVersionName}.apk")
@@ -1028,9 +1047,8 @@ fun UpdateSheetDialog(
                     }, modifier = Modifier.weight(1f).height(48.dp), shape = G2Shapes.button) { Text("取消") }
                     Button(onClick = {
                         view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                        val url = pendingDownloadUrl
                         scope.launch { confirmSheetState.hide(); showDownloadConfirm = false }
-                            .invokeOnCompletion { downloadState.start(context, url, "ScreenTester_${GlobalUpdateState.latestVersionName}.apk", scope) }
+                        startDownloadWithPermission(pendingDownloadUrl)
                     }, modifier = Modifier.weight(1f).height(48.dp), shape = G2Shapes.button) { Text("继续", fontWeight = FontWeight.Bold) }
                 }
                 Spacer(Modifier.height(16.dp))

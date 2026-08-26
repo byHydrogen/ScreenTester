@@ -36,12 +36,8 @@ class TouchTestActivity : ComponentActivity() {
         insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         insetsController.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
 
-        // 亮度设置逻辑
-        if (ThemeSettings.isMaxBrightnessEnabled) {
-            val lp = window.attributes
-            lp.screenBrightness = ThemeSettings.testBrightnessValue
-            window.attributes = lp
-        }
+        // 测试窗口设置
+        applyTestWindowSettings()
 
         setContent {
             // 使用ScreenTesterTheme

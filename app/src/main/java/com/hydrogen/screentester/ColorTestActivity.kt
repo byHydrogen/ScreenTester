@@ -36,11 +36,7 @@ class ColorTestActivity : ComponentActivity() {
             }
         })
 
-        if (ThemeSettings.isMaxBrightnessEnabled) {
-            val lp = window.attributes
-            lp.screenBrightness = ThemeSettings.testBrightnessValue
-            window.attributes = lp
-        }
+        applyTestWindowSettings()
 
         setContent {
             val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current

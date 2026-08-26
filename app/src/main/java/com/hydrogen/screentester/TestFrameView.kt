@@ -341,20 +341,13 @@ class TestFrameView @JvmOverloads constructor(
         canvas.drawLine(0.5f, 0f, 0.5f, h, linePaint)
         canvas.drawLine(w - 0.5f, 0f, w - 0.5f, h, linePaint)
 
-        data class ZoneData(val px: Float, val title: String, val subtitle: String)
-        val zones = listOf(
-            ZoneData(2f, "此区域左右边缘 2 像素", "如果左右刚好看不到，左右遮挡宽度各0.11mm"),
-            ZoneData(4f, "此区域左右边缘 4 像素", "如果左右刚刚好看不到，左右遮挡宽度各0.22mm"),
-            ZoneData(1f, "四周 1 像素线条看得见吗？", "如果左右刚刚好看不到，左右遮挡宽度各0.055mm"),
-            ZoneData(6f, "此区域左右边缘 6 像素", "如果左右刚好看不到，左右遮挡宽度各0.33mm"),
-            ZoneData(8f, "此区域左右边缘 8 像素", "如果左右刚好看不到，左右遮挡宽度各0.44mm")
-        )
-
         for (i in 0 until 5) {
             val top = i * zoneHeight
             val bottom = (i + 1) * zoneHeight
             val centerYZone = top + zoneHeight / 2f
-            val zone = zones[i]
+            val zonePx = ZONE_PX[i]
+            val zoneTitle = ZONE_TITLES[i]
+            val zoneSubtitle = getZoneSubtitle(i)
 
             if (i > 0) {
                 linePaint.strokeWidth = 1f
@@ -363,9 +356,9 @@ class TestFrameView @JvmOverloads constructor(
                 linePaint.alpha = 255
             }
 
-            if (zone.px > 1f) {
-                linePaint.strokeWidth = zone.px
-                val offset = zone.px / 2f
+            if (zonePx > 1f) {
+                linePaint.strokeWidth = zonePx
+                val offset = zonePx / 2f
                 canvas.drawLine(offset, top, offset, bottom, linePaint)
                 canvas.drawLine(w - offset, top, w - offset, bottom, linePaint)
             }
@@ -381,18 +374,18 @@ class TestFrameView @JvmOverloads constructor(
                 textPaint.color = Color.WHITE
                 textPaint.textSize = 45f
                 textPaint.isFakeBoldText = false
-                canvas.drawText(zone.title, centerX, centerYZone + 120f, textPaint)
+                canvas.drawText(zoneTitle, centerX, centerYZone + 120f, textPaint)
                 textPaint.textSize = 35f
                 textPaint.alpha = 180
-                canvas.drawText(zone.subtitle, centerX, centerYZone + 180f, textPaint)
+                canvas.drawText(zoneSubtitle, centerX, centerYZone + 180f, textPaint)
             } else {
                 textPaint.isFakeBoldText = true
                 textPaint.textSize = 50f
-                canvas.drawText(zone.title, centerX, centerYZone - 20f, textPaint)
+                canvas.drawText(zoneTitle, centerX, centerYZone - 20f, textPaint)
                 textPaint.isFakeBoldText = false
                 textPaint.textSize = 35f
                 textPaint.alpha = 180
-                canvas.drawText(zone.subtitle, centerX, centerYZone + 50f, textPaint)
+                canvas.drawText(zoneSubtitle, centerX, centerYZone + 50f, textPaint)
                 textPaint.alpha = 255
             }
         }
@@ -455,5 +448,52 @@ class TestFrameView @JvmOverloads constructor(
         borderPath.close()
 
         canvas.drawPath(borderPath, linePaint)
+    }
+
+    // === 精度模式分区数据与动态换算 ===
+
+    // 缓存按当前设备 xdpi 格式化好的副标题，xdpi 变化时才重建
+    private var cachedSubtitles: Array<String>? = null
+    private var cachedXdpi: Float = -1f
+
+    private fun getZoneSubtitle(index: Int): String {
+        val xdpi = resources.displayMetrics.xdpi
+        if (cachedSubtitles == null || cachedXdpi != xdpi) {
+            cachedXdpi = xdpi
+            cachedSubtitles = Array(ZONE_PX.size) { i ->
+                ZONE_SUBTITLE_PREFIXES[i] + formatPxAsMm(ZONE_PX[i], xdpi) + "mm"
+            }
+        }
+        return cachedSubtitles!![index]
+    }
+
+    // px → mm 换算：小于 0.1mm 保留 3 位小数，否则 2 位
+    private fun formatPxAsMm(px: Float, xdpi: Float): String {
+        val dpi = if (xdpi > 0f) xdpi else resources.displayMetrics.density * 160f // xdpi 异常兜底
+        val mm = px / dpi * 25.4f
+        return if (mm < 0.1f) String.format("%.3f", mm) else String.format("%.2f", mm)
+    }
+
+    private companion object {
+        // 精度模式各分区的像素宽度
+        val ZONE_PX = floatArrayOf(2f, 4f, 1f, 6f, 8f)
+
+        // 各分区标题
+        val ZONE_TITLES = arrayOf(
+            "此区域左右边缘 2 像素",
+            "此区域左右边缘 4 像素",
+            "四周 1 像素线条看得见吗？",
+            "此区域左右边缘 6 像素",
+            "此区域左右边缘 8 像素"
+        )
+
+        // 各分区副标题前缀，mm 数值由 formatPxAsMm 按设备 DPI 动态生成
+        val ZONE_SUBTITLE_PREFIXES = arrayOf(
+            "如果左右刚好看不到，左右遮挡宽度各",
+            "如果左右刚刚好看不到，左右遮挡宽度各",
+            "如果左右刚刚好看不到，左右遮挡宽度各",
+            "如果左右刚好看不到，左右遮挡宽度各",
+            "如果左右刚好看不到，左右遮挡宽度各"
+        )
     }
 }

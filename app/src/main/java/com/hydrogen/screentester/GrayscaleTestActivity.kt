@@ -51,11 +51,7 @@ class GrayscaleTestActivity : ComponentActivity() {
             override fun handleOnBackPressed() { finish() }
         })
 
-        if (ThemeSettings.isMaxBrightnessEnabled) {
-            val lp = window.attributes
-            lp.screenBrightness = ThemeSettings.testBrightnessValue
-            window.attributes = lp
-        }
+        applyTestWindowSettings()
 
         setContent {
             val view = LocalView.current
