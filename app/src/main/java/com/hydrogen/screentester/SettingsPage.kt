@@ -1521,7 +1521,7 @@ fun SettingsPage() {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text("卡片高级动效", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                                        Text(text = if (ThemeSettings.isAnimationEnabled) "关闭后将禁用卡片淡入效果" else "开启后将拥有卡片淡入效果", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(text = if (ThemeSettings.isAnimationEnabled) "关闭后将禁用卡片动画效果" else "开启后将拥有卡片动画效果", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                     Switch(
                                         checked = ThemeSettings.isAnimationEnabled,

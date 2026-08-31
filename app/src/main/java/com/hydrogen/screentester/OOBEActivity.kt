@@ -1010,7 +1010,7 @@ fun OOBEAdvancedUIStep(isDark: Boolean) {
                     Text("启用卡片动效", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = if (isEnabled) "已开启 - 卡片将带有淡入淡出效果" else "已关闭 - 卡片将直接显示",
+                        text = if (isEnabled) "已开启 - 卡片将带有更多动画效果" else "已关闭 - 卡片将直接显示",
                         fontSize = 13.sp,
                         color = if (isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                     )

@@ -221,6 +221,8 @@ class MainActivity : ComponentActivity() {
                         androidx.core.view.WindowInsetsControllerCompat(window, view).apply {
                             isAppearanceLightStatusBars = !isDark
                             isAppearanceLightNavigationBars = !isDark
+                            // 关闭三键导航栏的半透明对比遮罩
+                            window.isNavigationBarContrastEnforced = false
                         }
                     }
                     // 启动时检测圆心数据可用性（仅首次，结果存 SharedPreferences）

@@ -283,10 +283,10 @@ fun AboutPage() {
                                 }
 
                                 // 当前版本信息
-                                Text(text = "版本 2.9.1", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary)
+                                Text(text = "版本 2.9.6", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary)
                                 Spacer(Modifier.height(6.dp))
                                 Text(
-                                    text = "新增 测试亮度设置 测试页屏幕常亮 开关\n修复 黑边遮挡测试 精度模式 遮挡宽度毫米数值（改为按设备屏幕实际密度动态计算）\n修复 了一些已知问题",
+                                    text = "重构 主页 网格/列表\n新增 全新 卡片视图切换动画\n优化 主页 搜索测试项结果卡片动画\n修复 主页 网格视图下搜索时卡片未重排的问题\n修复 Android 15 以下 Android 版本 主界面 导航条有半透明遮罩的问题\n修复 Android 15 以下 Android 版本 历史更新界面 导航条有半透明遮罩的问题\n修复 部分 Android 版本下 HDR检测界面 状态栏/导航条不沉浸的问题\n修复 了一些已知问题",
                                     fontSize = 13.sp,
                                     lineHeight = 18.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant

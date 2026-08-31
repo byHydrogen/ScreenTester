@@ -14,6 +14,7 @@ import android.view.Display
 import android.view.HapticFeedbackConstants
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -63,7 +64,8 @@ import kotlinx.coroutines.isActive
 class HDRTestActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        WindowCompat.setDecorFitsSystemWindows(window, false)
+        enableEdgeToEdge()
+        window.isNavigationBarContrastEnforced = false // 关闭三键导航栏的半透明对比遮罩
 
         window.colorMode = ActivityInfo.COLOR_MODE_DEFAULT
 
