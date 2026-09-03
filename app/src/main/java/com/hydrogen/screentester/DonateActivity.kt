@@ -42,6 +42,7 @@ import com.hydrogen.screentester.ui.theme.ScreenTesterTheme
 class DonateActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
+        window.isNavigationBarContrastEnforced = false // 关闭三键导航栏的半透明对比遮罩
         super.onCreate(savedInstanceState)
         setContent {
             ScreenTesterTheme {

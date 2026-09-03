@@ -74,6 +74,11 @@ class OOBEActivity : ComponentActivity() {
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
 
+        // 渲染进摄像头挖孔区域，避免全屏时挖孔处出现黑条（等效系统"刘海屏：自动匹配"）
+        window.attributes = window.attributes.apply {
+            layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+
         // 检查是否已完成 OOBE
         val prefs = getSharedPreferences("oobe_prefs", MODE_PRIVATE)
         if (prefs.getBoolean("oobe_completed", false)) {

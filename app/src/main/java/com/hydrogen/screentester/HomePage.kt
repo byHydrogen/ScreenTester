@@ -35,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
@@ -379,7 +380,7 @@ fun HomePage() {
                             }
                         }
                     }
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     // 更新提示横幅
                     androidx.compose.animation.AnimatedVisibility(
@@ -546,7 +547,6 @@ fun HomePage() {
                                 ),
                                 fadeOutSpec = tween(200, easing = FastOutSlowInEasing) // 被搜索过滤时淡出
                             )
-                            .clipToBounds()
                     ) {
                         val alpha = remember { Animatable(0f) }
                         val offsetY = remember { Animatable(30f) }
@@ -698,7 +698,7 @@ private fun MorphingHomeCard(card: HomeCard, onClick: () -> Unit) {
                 .width(cardWidth)
                 .height(cardHeight)
                 .clip(G2Shapes.gridCard)
-                .background(cardBg)
+                .drawBehind { drawRect(cardBg) }
                 .clickable { onClick() }
     ) {
         // 文字块
@@ -708,7 +708,7 @@ private fun MorphingHomeCard(card: HomeCard, onClick: () -> Unit) {
                 .fillMaxWidth()
                 .padding(start = textStart, end = textEnd)
                 .onSizeChanged { with(density) { textBlockHeightDp = it.height.toDp() } }
-                .offset(y = textOffsetY)
+                .offset { IntOffset(0, textOffsetY.roundToPx()) }
         ) {
             Text(
                 text = card.title,
