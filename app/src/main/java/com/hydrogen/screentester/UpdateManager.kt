@@ -33,17 +33,28 @@ object UpdateManager {
         "https://gitee.com/byHydrogen/screen-tester/releases"
     }
 
+    // 版本比较：先比数字段，数字相同再比 Beta 序号（Beta 1 < Beta 2 < 稳定版）
+    // 支持 "3.x.x Beta 1" / "3.x.xbeta1" / "3.x.x Beta" 等写法
+    private fun parseVersion(version: String): Pair<List<Int>, Int> {
+        val match = Regex("""^([0-9]+(?:\.[0-9]+)*)(?:\s*beta\s*(\d*))?""", RegexOption.IGNORE_CASE).find(version.trim())
+        if (match == null) return listOf(0) to Int.MAX_VALUE
+        val numbers = match.groupValues[1].split('.').map { it.toIntOrNull() ?: 0 }
+        val beta = if (match.groupValues[2].isEmpty()) Int.MAX_VALUE else match.groupValues[2].toInt()
+        return numbers to beta
+    }
+
     fun isVersionGreater(remoteVersion: String, localVersion: String): Boolean {
-        val remoteParts = remoteVersion.split(".").map { it.toIntOrNull() ?: 0 }
-        val localParts = localVersion.split(".").map { it.toIntOrNull() ?: 0 }
-        val length = maxOf(remoteParts.size, localParts.size)
+        val (remoteNums, remoteBeta) = parseVersion(remoteVersion)
+        val (localNums, localBeta) = parseVersion(localVersion)
+        val length = maxOf(remoteNums.size, localNums.size)
         for (i in 0 until length) {
-            val r = remoteParts.getOrElse(i) { 0 }
-            val l = localParts.getOrElse(i) { 0 }
+            val r = remoteNums.getOrElse(i) { 0 }
+            val l = localNums.getOrElse(i) { 0 }
             if (r > l) return true
             if (r < l) return false
         }
-        return false
+        // 数字相同：稳定版 > Beta；Beta 序号大者更新
+        return remoteBeta > localBeta
     }
 
     fun checkUpdate(

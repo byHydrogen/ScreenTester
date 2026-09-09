@@ -10,7 +10,9 @@ import android.text.style.ClickableSpan
 import android.text.style.LeadingMarginSpan
 import android.text.style.URLSpan
 import android.util.TypedValue
+import android.view.MotionEvent
 import android.view.View
+import android.widget.TextView
 import androidx.appcompat.widget.AppCompatTextView
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -40,6 +42,8 @@ fun MarkdownText(
         factory = { ctx ->
             MarkdownTextView(ctx).apply {
                 setLineSpacing(0f, lineHeightSp / fontSizeSp)
+                // 长按可选中并复制
+                setTextIsSelectable(true)
             }
         },
         update = { tv ->
@@ -92,7 +96,9 @@ fun MarkdownText(
 
             tv.text = spannable
             tv.setLinkTextColor(linkColor)
-            tv.movementMethod = LinkMovementMethod.getInstance()
+            // 用只看点击的版本：不做"选中链接范围"，避免按下时出现主题色方块；
+            // 长按选中文本仍由 TextView 自身处理（保留选区底色）
+            tv.movementMethod = LinkOnlyMovementMethod()
         },
         modifier = modifier
     )
@@ -180,4 +186,22 @@ private fun inlineFormat(text: String): String {
     result = result.replace(Regex("`([^`]+)`")) { "<code>${it.groupValues[1]}</code>" }
     result = result.replace(Regex("_(.+?)_")) { "<em>${it.groupValues[1]}</em>" }
     return result
+}
+
+// 只负责"点开链接"：不调用 LinkMovementMethod.onTouchEvent，
+// 因而不会把链接范围设为选区（那会用主题高亮色画出一个方块）
+private class LinkOnlyMovementMethod : LinkMovementMethod() {
+    override fun onTouchEvent(widget: TextView, buffer: Spannable, event: MotionEvent): Boolean {
+        if (event.action == MotionEvent.ACTION_UP) {
+            val l = widget.layout ?: return false
+            val offset = l.getOffsetForHorizontal(l.getLineForVertical(event.y.toInt()), event.x)
+            val spans = buffer.getSpans(offset, offset, ClickableSpan::class.java)
+            if (spans.isNotEmpty()) {
+                widget.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
+                spans[0].onClick(widget)
+                return true
+            }
+        }
+        return false
+    }
 }

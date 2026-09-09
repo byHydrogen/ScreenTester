@@ -25,6 +25,26 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.hydrogen.screentester.ui.theme.ScreenTesterTheme
 
+/**
+ * 触摸格子的几何：**短边 8 格、长边 15 格** ——
+ * 竖屏即原来的 8×15；横屏自动变成 15×8（相当于把竖屏的网格跟着屏幕转置）。
+ * 于是两个方向的"格子相对屏幕的比例"一致，且都铺满整屏、不留白边。
+ */
+private data class TouchGrid(val cols: Int, val rows: Int, val blockW: Float, val blockH: Float)
+
+private fun touchGridGeometry(w: Float, h: Float): TouchGrid {
+    val cols: Int
+    val rows: Int
+    if (w <= h) {
+        cols = 8
+        rows = 15
+    } else {
+        cols = 15
+        rows = 8
+    }
+    return TouchGrid(cols = cols, rows = rows, blockW = w / cols, blockH = h / rows)
+}
+
 class TouchTestActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -48,8 +68,6 @@ class TouchTestActivity : ComponentActivity() {
                 val monetPrimaryColor = MaterialTheme.colorScheme.primary
                 val trailColor = MaterialTheme.colorScheme.onPrimaryContainer
 
-                val rows = 15
-                val cols = 8
                 val touchedBlocks = remember { mutableStateListOf<Int>() }
                 val gesturePoints = remember { mutableStateListOf<Offset?>() }
 
@@ -64,11 +82,10 @@ class TouchTestActivity : ComponentActivity() {
                                 val pos = change.position
                                 gesturePoints.add(pos)
 
-                                val blockW = size.width / cols
-                                val blockH = size.height / rows
-                                val c = (pos.x / blockW).toInt().coerceIn(0, cols - 1)
-                                val r = (pos.y / blockH).toInt().coerceIn(0, rows - 1)
-                                val index = r * cols + c
+                                val g = touchGridGeometry(size.width.toFloat(), size.height.toFloat())
+                                val c = (pos.x / g.blockW).toInt().coerceIn(0, g.cols - 1)
+                                val r = (pos.y / g.blockH).toInt().coerceIn(0, g.rows - 1)
+                                val index = r * g.cols + c
 
                                 if (index !in touchedBlocks) {
                                     touchedBlocks.add(index)
@@ -78,17 +95,16 @@ class TouchTestActivity : ComponentActivity() {
                         )
                     }
                 ) {
-                    val blockW = size.width / cols
-                    val blockH = size.height / rows
+                    val g = touchGridGeometry(size.width, size.height)
 
-                    // 1. 画格子
-                    for (r in 0 until rows) {
-                        for (c in 0 until cols) {
-                            val index = r * cols + c
+                    // 1. 画格子（铺满整屏）
+                    for (r in 0 until g.rows) {
+                        for (c in 0 until g.cols) {
+                            val index = r * g.cols + c
                             drawRect(
                                 color = if (index in touchedBlocks) monetPrimaryColor else Color.Gray.copy(alpha = 0.2f),
-                                topLeft = Offset(c * blockW, r * blockH),
-                                size = Size(blockW - 2f, blockH - 2f)
+                                topLeft = Offset(c * g.blockW, r * g.blockH),
+                                size = Size(g.blockW - 2f, g.blockH - 2f)
                             )
                         }
                     }

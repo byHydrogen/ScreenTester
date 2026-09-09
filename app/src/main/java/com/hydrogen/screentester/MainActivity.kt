@@ -1,5 +1,8 @@
+@file:OptIn(ExperimentalHazeMaterialsApi::class)
+
 package com.hydrogen.screentester
 
+import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
 import android.os.Bundle
 import android.view.HapticFeedbackConstants
 import androidx.activity.ComponentActivity
@@ -15,6 +18,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import dev.chrisbanes.haze.materials.HazeMaterials
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.hazeSource
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -25,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hydrogen.screentester.ui.theme.ScreenTesterTheme
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -36,9 +44,11 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 
 // 可缓存的 G2 Shape 类
 class CachedG2Shape(
@@ -245,6 +255,17 @@ fun MainContainer() {
     val scope = rememberCoroutineScope()
     val pagerState = rememberPagerState(pageCount = { 3 })
     val focusManager = LocalFocusManager.current
+    val hazeState = remember { HazeState() }
+
+    // 跨页面导航请求：滑动切页 → 切页完成后触发设置页引导
+    LaunchedEffect(SettingsNavRequests.pageRequestId) {
+        if (SettingsNavRequests.pageRequestId == 0) return@LaunchedEffect
+        val target = SettingsNavRequests.targetPage ?: return@LaunchedEffect
+        // 滑入期间先粗定位（此刻设置页不可见）
+        if (target == 1) SettingsNavRequests.preScrollRequestId++
+        pagerState.animateScrollToPage(target)
+        if (target == 1) SettingsNavRequests.guideRequestId++
+    }
 
     Box(
         modifier = Modifier
@@ -256,22 +277,47 @@ fun MainContainer() {
     ) {
         HorizontalPager(
             state = pagerState,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .hazeSource(hazeState),
             beyondViewportPageCount = 2,
             userScrollEnabled = true
         ) { pageIndex ->
             when (pageIndex) {
                 0 -> HomePage()
                 1 -> SettingsPage()
-                2 -> AboutPage()
+                2 -> AboutPage(pageVisible = pagerState.currentPage == 2)
             }
         }
 
         val navBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+        // thin 样式在组合期计算（HazeMaterials.thin 为 @Composable）；blurRadius 在块内读取状态，滑杆/输入/重置实时生效
+        val thinStyle = HazeMaterials.thin(containerColor = MaterialTheme.colorScheme.background)
+        // 底栏模糊开关的过渡进度：模糊层与不透明底色交叉淡入淡出，避免开关时背景「闪现」
+        val navBarBlurProgress by animateFloatAsState(
+            targetValue = if (ThemeSettings.navBarBlurEnabled) 1f else 0f,
+            animationSpec = tween(320, easing = FastOutSlowInEasing),
+            label = "navBarBlurProgress"
+        )
         AnimatedScrubbingNavBar(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = maxOf(32.dp, navBarInset)),
+                .padding(bottom = maxOf(32.dp, navBarInset))
+                .then(
+                    if (navBarBlurProgress > 0f) {
+                        Modifier
+                            .clip(G2Shapes.navBar) // 先裁剪成底栏 G2 形状，模糊效果随之被裁进圆角内
+                            .hazeEffect(hazeState) {
+                                // blurRadius 在块内读取状态：滑杆/输入/重置的变化实时生效
+                                style = thinStyle.copy(blurRadius = ThemeSettings.navBarBlurRadius.dp)
+                            }
+                    } else {
+                        Modifier
+                    }
+                ),
+            // 只让「底色」跟着过渡：模糊层画在底色之下，底色淡出的同时模糊自然露出来。
+            // 注意不能把 alpha 加在整条底栏上——那会把图标文字一起淡掉。
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f * (1f - navBarBlurProgress)),
             currentPage = pagerState.currentPage,
             onDrag = { deltaX ->
                 // 手指往右(deltaX为正)，Pager向左滚(-deltaX)，实现同步
@@ -292,6 +338,7 @@ fun MainContainer() {
 @Composable
 fun AnimatedScrubbingNavBar(
     modifier: Modifier = Modifier,
+    containerColor: Color = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
     currentPage: Int,
     onDrag: (Float) -> Unit,
     onDragEnd: () -> Unit,
@@ -299,7 +346,8 @@ fun AnimatedScrubbingNavBar(
 ) {
     val items = listOf("主页" to Icons.Default.Home, "设置" to Icons.Default.Settings, "关于" to Icons.Default.Info)
     val configuration = LocalConfiguration.current
-    val navBarWidth = configuration.screenWidthDp.dp * 0.85f
+    // 大屏上限：不加限制的话在平板上会变成一条横跨整屏的超长条。
+    val navBarWidth = minOf(configuration.screenWidthDp.dp * 0.85f, DeviceUtils.NavBarMaxWidth)
     val tabWidth = navBarWidth / items.size
     val density = LocalDensity.current.density
 
@@ -328,10 +376,10 @@ fun AnimatedScrubbingNavBar(
                 )
             },
         shape = navBarG2Shape,
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
+        color = containerColor,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f))
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             Box(

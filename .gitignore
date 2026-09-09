@@ -15,6 +15,7 @@
 local.properties
 *.jks
 *.keystore
+.workbuddy/
 *.apk
 *.ap_
 *.dex

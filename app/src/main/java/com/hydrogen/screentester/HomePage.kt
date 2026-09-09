@@ -1,5 +1,8 @@
+@file:OptIn(ExperimentalHazeMaterialsApi::class)
+
 package com.hydrogen.screentester
 
+import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -18,7 +21,10 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
@@ -44,6 +50,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
+import dev.chrisbanes.haze.HazeProgressive
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.materials.HazeMaterials
+import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.hazeSource
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -188,6 +199,9 @@ fun HomePage() {
         listOf("触控采样率测试", "采样率", "Hz")
     )
 
+    val gridState = rememberLazyGridState()
+    val hazeState = remember { HazeState() }
+
     // 卡片模型与过滤结果：搜索时驱动网格重排（key 为稳定原始下标）
     val allCards = testItems.mapIndexed { index, item ->
         HomeCard(index, item.first.first, item.first.second, item.first.third, item.second)
@@ -196,27 +210,37 @@ fun HomePage() {
         searchKeywords[card.originalIndex].any { it.contains(searchQuery, true) }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            // Tab 可见性检测放在满宽 Box 上
+            .onGloballyPositioned { coords ->
+                val currentX = coords.positionInWindow().x
+                if (currentX != lastX) {
+                    val isVisibleNow = currentX > -screenWidthPx / 2 && currentX < screenWidthPx / 2
+                    if (isVisibleNow && !wasVisible) {
+                        // 切回主页时清空搜索框并重新触发入场
+                        clearSearch()
+                        animationTrigger++
+                    }
+                    wasVisible = isVisibleNow
+                    lastX = currentX
+                }
+            }
+    ) {
         LazyVerticalGrid(
-            columns = GridCells.Fixed(if (ThemeSettings.isGridView) 2 else 1),
+            state = gridState,
+            // 网格自适应列数：手机 2 列，大屏 3~4 列
+            columns = if (ThemeSettings.isGridView) GridCells.Adaptive(168.dp) else GridCells.Fixed(1),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier
-                .fillMaxSize()
+                .align(Alignment.TopCenter)
+                .fillMaxHeight()
+                // 大屏适配：内容限宽居中
+                .widthIn(max = DeviceUtils.ContentMaxWidth)
+                .hazeSource(hazeState)
                 .padding(horizontal = 24.dp)
-                .onGloballyPositioned { coords ->
-                    val currentX = coords.positionInWindow().x
-                    if (currentX != lastX) {
-                        val isVisibleNow = currentX > -screenWidthPx / 2 && currentX < screenWidthPx / 2
-                        if (isVisibleNow && !wasVisible) {
-                            // 从 设置/关于 Tab 切回主页时，清空搜索框并重新触发瀑布流浮出
-                            clearSearch()
-                            animationTrigger++
-                        }
-                        wasVisible = isVisibleNow
-                        lastX = currentX
-                    }
-                }
         ) {
             item(key = "header", span = { GridItemSpan(maxLineSpan) }) {
                 Column(modifier = Modifier.fillMaxWidth()) {
@@ -232,14 +256,18 @@ fun HomePage() {
                         val windowInfo = LocalWindowInfo.current
                         val screenWidthPx = windowInfo.containerSize.width
                         val density = LocalDensity.current
-                        val screenWidthDp = with(density) { screenWidthPx.toDp() }
+                        // 跟随内容限宽收敛
+                        // 否则按窗口宽度算出来的搜索框会远超内容区，盖住旁边的视图切换按钮
+                        val contentWidthDp = with(density) {
+                            minOf(screenWidthPx.toDp(), DeviceUtils.ContentMaxWidth)
+                        }
                         val searchBoxWidth by animateDpAsState(
                             targetValue = if (isFocused) {
-                                // 聚焦时：占据整个宽度
-                                screenWidthDp - 48.dp // 减去左右 padding
+                                // 聚焦时：占据整个内容宽度
+                                contentWidthDp - 48.dp // 减去左右 padding
                             } else {
                                 // 未聚焦时：占据部分宽度（留出按钮空间）
-                                screenWidthDp - 48.dp - 56.dp - 12.dp // 减去 padding、按钮宽度、间距
+                                contentWidthDp - 48.dp - 56.dp - 12.dp // 减去 padding、按钮宽度、间距
                             },
                             animationSpec = spring(
                                 dampingRatio = 0.8f,
@@ -516,6 +544,99 @@ fun HomePage() {
                     if (showQQDialog) {
                         QQGroupDialog(onDismiss = { showQQDialog = false; markQQShown() })
                     }
+
+                    // 旧版曲线提示横幅：升级上来的老用户（非全新安装）且仍在新版曲线时显示一次
+                    val curvePrefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+                    val currentVersionName = try {
+                        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: ""
+                    } catch (e: Exception) {
+                        ""
+                    }
+                    var showCurveBanner by remember {
+                        mutableStateOf(
+                            !curvePrefs.getBoolean("fresh_install", false) &&
+                                    !curvePrefs.getBoolean("legacy_curve_banner_shown", false) &&
+                                    !ThemeSettings.useCustomRadius && !ThemeSettings.isLegacyCurveEnabled
+                        )
+                    }
+                    LaunchedEffect(Unit) {
+                        curvePrefs.edit().putString("last_version_name", currentVersionName).apply()
+                    }
+                    // 记录本次版本名，之后的版本升级判断用（本次首发场景靠 fresh_install 区分）
+                    LaunchedEffect(Unit) {
+                        curvePrefs.edit().putString("last_version_name", currentVersionName).apply()
+                    }
+                    val markCurveBannerShown = {
+                        showCurveBanner = false
+                        curvePrefs.edit().putBoolean("legacy_curve_banner_shown", true).apply()
+                    }
+                    LaunchedEffect(showCurveBanner) {
+                        if (showCurveBanner) {
+                            delay(30_000)
+                            markCurveBannerShown()
+                        }
+                    }
+
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = showCurveBanner,
+                        enter = expandVertically(animationSpec = tween(300, easing = FastOutSlowInEasing)) + fadeIn(tween(300)),
+                        exit = shrinkVertically(animationSpec = tween(300, easing = FastOutSlowInEasing)) + fadeOut(tween(300))
+                    ) {
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp)
+                                .clip(G2Shapes.card)
+                                .clickable {
+                                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                    SettingsNavRequests.skipEnterAnimation = true
+                                    SettingsNavRequests.targetPage = 1
+                                    SettingsNavRequests.pageRequestId++
+                                    markCurveBannerShown()
+                                },
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
+                            shape = G2Shapes.card
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AutoFixHigh,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "圆角曲线已更新",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                    Text(
+                                        text = "点击前往设置，可切回旧版曲线",
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                                    )
+                                }
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "关闭",
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f),
+                                    modifier = Modifier
+                                        .size(26.dp)
+                                        .clip(CircleShape)
+                                        .clickable {
+                                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                            markCurveBannerShown()
+                                        }
+                                        .padding(4.dp)
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -619,27 +740,58 @@ fun HomePage() {
 
             item(key = "footer", span = { GridItemSpan(maxLineSpan) }) { Spacer(modifier = Modifier.height(200.dp)) }
     }
-        val backgroundColor = MaterialTheme.colorScheme.background
 
+        // 顶栏：上划越过小阈值后整体淡入
+        val topBarAlpha by animateFloatAsState(
+            targetValue = if (gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 120) 1f else 0f,
+            animationSpec = tween(450),
+            label = "topBarAlpha"
+        )
+        // thin 样式在组合期计算（HazeMaterials.thin 为 @Composable，不能在 hazeEffect 块内调用）
+        val topBarThinStyle = HazeMaterials.thin(containerColor = MaterialTheme.colorScheme.background)
         Box(
             modifier = Modifier
+                .align(Alignment.TopCenter)
                 .fillMaxWidth()
-                .windowInsetsTopHeight(WindowInsets.statusBars.add(WindowInsets(top = 60.dp)))
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            backgroundColor,
-                            backgroundColor.copy(alpha = 0.9f),
-                            backgroundColor.copy(alpha = 0.8f),
-                            backgroundColor.copy(alpha = 0.6f),
-                            backgroundColor.copy(alpha = 0.4f),
-                            backgroundColor.copy(alpha = 0.2f),
-                            backgroundColor.copy(alpha = 0.1f),
-                            Color.Transparent
-                        )
-                    )
+                // graphicsLayer 必须在模糊/背景之前（外层）：让 alpha 同时作用于模糊色带与文字
+                .graphicsLayer { this.alpha = topBarAlpha }
+                .then(
+                    if (ThemeSettings.topBarGradientBlur) {
+                        Modifier.hazeEffect(hazeState) {
+                            style = topBarThinStyle
+                            progressive = HazeProgressive.verticalGradient(startIntensity = 1f, endIntensity = 0f)
+                        }
+                    } else {
+                        Modifier
+                            .background(
+                                Brush.verticalGradient(
+                                    colorStops = arrayOf(
+                                        0f to MaterialTheme.colorScheme.background.copy(alpha = 0.96f),
+                                        0.14f to MaterialTheme.colorScheme.background.copy(alpha = 0.92f),
+                                        0.30f to MaterialTheme.colorScheme.background.copy(alpha = 0.84f),
+                                        0.46f to MaterialTheme.colorScheme.background.copy(alpha = 0.72f),
+                                        0.62f to MaterialTheme.colorScheme.background.copy(alpha = 0.50f),
+                                        0.80f to MaterialTheme.colorScheme.background.copy(alpha = 0.20f),
+                                        1f to MaterialTheme.colorScheme.background.copy(alpha = 0f)
+                                    )
+                                )
+                            )
+                            .padding(bottom = 32.dp)
+                    }
                 )
-        )
+                .statusBarsPadding()
+                .heightIn(min = 56.dp)
+                .padding(start = 24.dp, end = 24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "ScreenTester",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center
+            )
+        }
     }
 }
 

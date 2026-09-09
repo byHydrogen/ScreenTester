@@ -7,8 +7,29 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.unit.dp
 
 object DeviceUtils {
+
+    // ── 大屏适配 ──────────────────────────────────────────────
+    // 大屏 = 最小宽度 sw ≥ 600dp（平板 / 折叠内屏 / 桌面窗口）
+    const val LARGE_SCREEN_MIN_WIDTH_DP = 600
+
+    // 内容最大宽度：大屏上居中并限宽
+    // 手机宽度不足时不生效，行为不变
+    val ContentMaxWidth = 840.dp
+
+    // 表单类页面（设置页、关于页）上限
+    val FormMaxWidth = 640.dp
+
+    // 底部导航栏在大屏上的宽度上限
+    val NavBarMaxWidth = 480.dp
+
+    // 当前是否大屏（sw ≥ 600dp）
+    @Composable
+    fun isLargeScreen(): Boolean =
+        LocalConfiguration.current.smallestScreenWidthDp >= LARGE_SCREEN_MIN_WIDTH_DP
 
     // 提取的公共底层反射方法，用来偷看各大厂商藏在底层的配置
     private fun getSystemProperty(key: String): String {
@@ -94,9 +115,14 @@ object DeviceUtils {
         }
 
         // 【蓝厂系】 OriginOS / FuntouchOS
+        val vivoOsDisplayId = getSystemProperty("ro.vivo.os.build.display.id")
         val vivoOsName = getSystemProperty("ro.vivo.os.name")
         val vivoOsVersion = getSystemProperty("ro.vivo.os.version")
-        if (vivoOsName.isNotEmpty()) {
+        if (vivoOsDisplayId.contains("OriginOS", ignoreCase = true)) {
+            // 新 OriginOS 直接使用 display.id
+            return vivoOsDisplayId.trim()
+        } else if (vivoOsName.isNotEmpty()) {
+            // 老 FuntouchOS 旧机型
             return "$vivoOsName $vivoOsVersion"
         }
 
@@ -158,6 +184,16 @@ object DeviceUtils {
     //    红/橙/棕 (0°-40° 或 345°-360°) / 黄/绿 (40°-160°) / 青/蓝绿 (160°-210°) / 蓝 (210°-270°) / 紫/粉 (270°-345°)
     @Composable
     fun backgroundBrush(isDark: Boolean): Brush {
+        return Brush.linearGradient(
+            colors = backgroundColors(isDark),
+            start = Offset(0f, 0f),
+            end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
+        )
+    }
+
+    // 3.1 按莫奈色相分类的三色背景色板（静态渐变与动态混色共用，保证开关切换前后色系一致）
+    @Composable
+    fun backgroundColors(isDark: Boolean): List<Color> {
         val context = LocalContext.current
         val monetPrimary = dynamicLightColorScheme(context).primary
         val hsv = FloatArray(3)
@@ -169,7 +205,7 @@ object DeviceUtils {
         )
         val hue = hsv[0]
 
-        val colors = if (isDark) {
+        return if (isDark) {
             when {
                 hue < 40f || hue >= 345f  -> listOf(Color(0xFF2B1720), Color(0xFF291E19), Color(0xFF2E2516))  // 深暖红：暗玫瑰/巧棕/墨橄榄
                 hue in 40f..160f          -> listOf(Color(0xFF2B2617), Color(0xFF1E2E16), Color(0xFF172B25))  // 深暖黄绿：暗金/墨绿/深湖绿
@@ -181,12 +217,44 @@ object DeviceUtils {
             when {
                 hue < 40f || hue >= 345f  -> listOf(Color(0xFFFDF0EC), Color(0xFFFCE4D6), Color(0xFFF5E6D0))  // 浅暖红：樱粉/杏橘/暖沙
                 hue in 40f..160f          -> listOf(Color(0xFFF8F3DC), Color(0xFFEAFBE7), Color(0xFFE0F5EE))  // 浅暖黄绿：奶黄/薄荷绿/冰绿
-                hue in 160f..210f         -> listOf(Color(0xFFE6F5F0), Color(0xFFE0F0F5), Color(0xFFEEF2F5))  // 浅青蓝绿：薄荷/冰蓝/雾白
+                hue in 160f..210f         -> listOf(Color(0xFFDDF3EC), Color(0xFFD3EDF5), Color(0xFFDAE9F4))  // 浅青蓝绿：薄荷/冰蓝/雾蓝
                 hue in 210f..270f         -> listOf(Color(0xFFE8ECF8), Color(0xFFE3E8FA), Color(0xFFEAE5F5))  // 浅蓝：浅蓝/冰蓝/淡紫
                 else                      -> listOf(Color(0xFFFDE8E9), Color(0xFFE3E1FB), Color(0xFFD6E3F9))  // 浅紫粉：粉/淡紫/浅蓝
             }
         }
-        return Brush.linearGradient(colors = colors, start = Offset(0f, 0f), end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY))
+    }
+
+    // 3.2 动态混色专用色板（HyperOS「我的设备」风格）：底色 + 三个光斑色。
+    //     色相在莫奈主色相基础上 ±40°~60° 拉开、饱和度比静态渐变高一档，
+    //     光斑漂移时的颜色变化才肉眼可见；深浅色各自成套。
+    @Composable
+    fun dynamicMixColors(isDark: Boolean): List<Color> {
+        val context = LocalContext.current
+        val monetPrimary = dynamicLightColorScheme(context).primary
+        val hsv = FloatArray(3)
+        android.graphics.Color.RGBToHSV(
+            (monetPrimary.red * 255).toInt(),
+            (monetPrimary.green * 255).toInt(),
+            (monetPrimary.blue * 255).toInt(),
+            hsv
+        )
+        val hue = hsv[0]
+
+        // 青蓝绿档收窄光斑色相跨度：默认跨度会同时混进蓝紫和绿，这一档尤其显脏
+        val nearSpan = if (hue in 160f..210f) 25f else 45f
+        val farSpan = if (hue in 160f..210f) 25f else 60f
+
+        return if (isDark) listOf(
+            Color.hsv(hue, 0.30f, 0.12f),                          // 底色：近黑的莫奈色调
+            Color.hsv(hue, 0.55f, 0.42f),                          // 主色斑
+            Color.hsv((hue + nearSpan) % 360f, 0.50f, 0.36f),      // 邻近色相光斑
+            Color.hsv((hue - farSpan + 360f) % 360f, 0.42f, 0.38f) // 另一侧光斑
+        ) else listOf(
+            Color.hsv(hue, 0.14f, 0.985f),                         // 底色：近乎白的莫奈色调
+            Color.hsv(hue, 0.52f, 0.87f),                          // 主色斑
+            Color.hsv((hue + nearSpan) % 360f, 0.46f, 0.90f),      // 邻近色相光斑
+            Color.hsv((hue - farSpan + 360f) % 360f, 0.40f, 0.91f) // 另一侧光斑
+        )
     }
 
     // 4. 返回背景主色（用于顶部栏渐变淡出等场景）
@@ -215,7 +283,7 @@ object DeviceUtils {
             when {
                 hue < 40f || hue >= 345f  -> Color(0xFFFDF0EC)
                 hue in 40f..160f          -> Color(0xFFF8F3DC)
-                hue in 160f..210f         -> Color(0xFFE6F5F0)
+                hue in 160f..210f         -> Color(0xFFDDF3EC)
                 hue in 210f..270f         -> Color(0xFFE8ECF8)
                 else                      -> Color(0xFFFDE8E9)
             }

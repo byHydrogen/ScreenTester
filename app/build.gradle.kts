@@ -6,15 +6,15 @@ plugins {
 android {
     namespace = "com.hydrogen.screentester"
     compileSdk {
-        version = release(36)
+        version = release(37)
     }
 
     defaultConfig {
         applicationId = "com.hydrogen.screentester"
         minSdk = 31
-        targetSdk = 36
-        versionCode = 17
-        versionName = "2.9.6"
+        targetSdk = 37
+        versionCode = 18
+        versionName = "3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -63,4 +63,6 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     implementation("androidx.compose.material:material-icons-extended")
+    implementation("dev.chrisbanes.haze:haze:1.7.3")
+    implementation("dev.chrisbanes.haze:haze-materials:1.7.3")
 }
