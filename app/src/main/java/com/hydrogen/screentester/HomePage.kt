@@ -28,10 +28,8 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.filled.ViewList
@@ -61,6 +59,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalConfiguration
@@ -79,6 +78,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.delay
@@ -230,8 +230,12 @@ fun HomePage() {
     ) {
         LazyVerticalGrid(
             state = gridState,
-            // 网格自适应列数：手机 2 列，大屏 3~4 列
-            columns = if (ThemeSettings.isGridView) GridCells.Adaptive(168.dp) else GridCells.Fixed(1),
+            // 自适应列数，最小列宽按屏幕分档：
+            // 手机（sw<600dp）用 150dp —— 360dp 宽的 720p 机型也能排 2 列（168dp 会算出 1 列），
+            //   横屏/较宽竖屏自动加列；大屏（sw≥600dp）用 168dp，平板 3~4 列
+            columns = if (ThemeSettings.isGridView) {
+                if (DeviceUtils.isLargeScreen()) GridCells.Adaptive(168.dp) else GridCells.Adaptive(150.dp)
+            } else GridCells.Fixed(1),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier
@@ -1022,7 +1026,6 @@ fun UpdateSheetDialog(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val systemCornerRadius = getSystemCornerRadius()
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val downloadState = GlobalUpdateState.downloadState
     DownloadProgressPoller(downloadState)
 
@@ -1049,12 +1052,18 @@ fun UpdateSheetDialog(
     var showDownloadConfirm by remember { mutableStateOf(false) }
     var pendingDownloadUrl by remember { mutableStateOf("") }
 
-    ModalBottomSheet(
+    // 把手可拉长的上限：屏高 70% 减去日志区与其他固定高度；空间不足（小屏）时禁用
+    val density = LocalDensity.current
+    val screenH = LocalConfiguration.current.screenHeightDp.dp
+    val expandCapDp = (screenH * 0.7f - 250.dp - 200.dp).coerceAtLeast(0.dp)
+    val expandMaxPx = if (expandCapDp > 48.dp) with(density) { expandCapDp.toPx() } else 0f
+
+    G2BottomSheet(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(topStart = systemCornerRadius, topEnd = systemCornerRadius),
-        sheetState = sheetState,
         scrimColor = Color.Black.copy(alpha = 0.5f),
+        expandMaxPx = if (expandMaxPx > 0f) expandMaxPx else null,
         dragHandle = {
             Box(
                 modifier = Modifier
@@ -1063,18 +1072,9 @@ fun UpdateSheetDialog(
                     .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
             )
         }
-    ) {
-        val sheetNestedScrollConnection = remember {
-            object : NestedScrollConnection {
-                override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset =
-                    if (available.y > 0) available.copy(x = 0f) else Offset.Zero
-                override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity =
-                    if (available.y > 0) available.copy(x = 0f) else Velocity.Zero
-            }
-        }
+    ) { onClose ->
         Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp)
-                .nestedScroll(sheetNestedScrollConnection)
         ) {
             Text(
                 text = "发现新版本 ${GlobalUpdateState.latestVersionName}",
@@ -1089,8 +1089,13 @@ fun UpdateSheetDialog(
                 fontSize = 14.sp, lineHeight = 20.sp,
                 textColor = MaterialTheme.colorScheme.onSurface.toArgb(),
                 linkColor = MaterialTheme.colorScheme.primary.toArgb(),
+                highlightColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f).toArgb(),
                 onLinkClick = { showLinkDialog = it },
-                modifier = Modifier.fillMaxWidth().heightIn(max = 250.dp).verticalScroll(rememberScrollState())
+                // 滚动交给 TextView 自己（LinkOnlyMovementMethod）：选择手柄拖到边缘时才能自动滚动；
+                // 把手拉长时日志区随之变高（heightIn(max) ⇒ 内容不足时自然矮，不留白）
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 250.dp + with(density) { LocalSheetExpandPx.current.toDp() })
             )
             // 浏览器下载
             Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -1116,7 +1121,7 @@ fun UpdateSheetDialog(
                 Button(
                     onClick = {
                         view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                        scope.launch { sheetState.hide(); onDismiss() }
+                        onClose()
                     },
                     modifier = Modifier.weight(1f).height(48.dp), shape = G2Shapes.button,
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1124,7 +1129,7 @@ fun UpdateSheetDialog(
                 Button(
                     onClick = {
                         view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                        scope.launch { sheetState.hide(); onDismiss() }
+                        onClose()
                         GlobalUpdateState.hasNewVersion = false
                         UpdateManager.ignoreVersion(context, GlobalUpdateState.latestVersionName)
                     },
@@ -1234,24 +1239,22 @@ fun UpdateSheetDialog(
                         )
                     }
                 }
-            }
             Spacer(Modifier.height(8.dp))
         }
+    }
     }
 
     // 流量下载确认弹窗
     if (showDownloadConfirm) {
-        val confirmSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(
+        G2BottomSheet(
             onDismissRequest = { showDownloadConfirm = false },
             containerColor = MaterialTheme.colorScheme.surface,
             shape = RoundedCornerShape(topStart = systemCornerRadius, topEnd = systemCornerRadius),
-            sheetState = confirmSheetState,
             scrimColor = Color.Black.copy(alpha = 0.5f),
             dragHandle = {
                 Box(Modifier.padding(vertical = 12.dp).width(40.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)))
             }
-        ) {
+        ) { onClose ->
             Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp)) {
                 Text("流量提醒", fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
                 Spacer(Modifier.height(16.dp))
@@ -1260,11 +1263,11 @@ fun UpdateSheetDialog(
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedButton(onClick = {
                         view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                        scope.launch { confirmSheetState.hide(); showDownloadConfirm = false }
+                        onClose()
                     }, modifier = Modifier.weight(1f).height(48.dp), shape = G2Shapes.button) { Text("取消") }
                     Button(onClick = {
                         view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                        scope.launch { confirmSheetState.hide(); showDownloadConfirm = false }
+                        onClose()
                         startDownloadWithPermission(pendingDownloadUrl)
                     }, modifier = Modifier.weight(1f).height(48.dp), shape = G2Shapes.button) { Text("继续", fontWeight = FontWeight.Bold) }
                 }

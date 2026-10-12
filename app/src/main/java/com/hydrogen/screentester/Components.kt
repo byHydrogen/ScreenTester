@@ -2,7 +2,9 @@ package com.hydrogen.screentester
 
 import android.content.Intent
 import android.view.HapticFeedbackConstants
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.core.content.edit
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -12,13 +14,18 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.with
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -38,20 +45,29 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.coroutineScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -96,6 +112,210 @@ fun HapticSlider(
     }
 }
 
+// 弹窗窗口的装饰处理：关窗口自带动画、关系统压暗层（压暗由自绘遮罩负责）、系统栏透明沉浸。
+// statusBarColor/navigationBarColor 在 Android 15（API 35）标记弃用——edge-to-edge 下系统不再绘制
+// 色条、setter 无效果；但 API < 35 的弹窗窗口仍靠它们做透明沉浸，保留并压制弃用告警
+@Suppress("DEPRECATION")
+private fun applyDialogWindowDecor(window: android.view.Window) {
+    window.setWindowAnimations(-1)
+    window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+    window.setDimAmount(0f)
+    window.statusBarColor = android.graphics.Color.TRANSPARENT
+    window.navigationBarColor = android.graphics.Color.TRANSPARENT
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+        window.isNavigationBarContrastEnforced = false
+    }
+}
+
+/** 弹窗被把手拉长的高度（px）；内容可据此增高（如"长日志区"） */
+val LocalSheetExpandPx = compositionLocalOf { 0f }
+
+/**
+ * 自绘的模态底部弹窗容器，替代 M3 ModalBottomSheet：
+ * 观感对齐（遮罩、顶部圆角、把手、上滑入场/下滑退场），但去掉半展开等易出问题的部分。
+ * 交互：把手居中、按住放大、按住把手可上下拖动（拖过阈值松手关闭，否则回弹）；
+ * 传入 [expandMaxPx] 后把手还可拉长内容（上拖变长、下拖变短，到 0 后继续下拖才是关闭手势）；
+ * 预测性返回跟手（手势进行中弹窗下移、遮罩变淡，取消回弹、确认关闭；无预测性的设备退化为按返回直接关闭）。
+ * 退场动画播完才回调 [onDismissRequest]，调用方直接把"移除弹窗"的代码写在里面即可；
+ * 内容里需要主动关闭时（按钮），调用 content 回调参数 [onClose]。
+ */
+@Composable
+fun G2BottomSheet(
+    onDismissRequest: () -> Unit,
+    modifier: Modifier = Modifier,
+    containerColor: Color = MaterialTheme.colorScheme.surface,
+    shape: Shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+    scrimColor: Color = Color.Black.copy(alpha = 0.5f),
+    sheetMaxWidth: Dp = 640.dp,
+    dragHandle: (@Composable () -> Unit)? = null,
+    /** 把手可拉长内容的上限（px）；null = 不可拉长（把手只用于关闭手势） */
+    expandMaxPx: Float? = null,
+    content: @Composable ColumnScope.(onClose: () -> Unit) -> Unit
+) {
+    // shown=false → 播放下滑退场动画 → 动画结束才真正回调 onDismissRequest
+    var shown by remember { mutableStateOf(false) }
+    var closing by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    // 拖拽/预测返回导致的下移位移（px，向下为正），换算关闭进度时用到 sheet 高度
+    val dragOffset = remember { Animatable(0f) }
+    // 把手拉长的当前高度（px）
+    var expandPx by remember { mutableFloatStateOf(0f) }
+    var sheetHeightPx by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(Unit) { shown = true }
+    fun requestClose() {
+        if (!closing) {
+            closing = true
+            shown = false
+        }
+    }
+    // 退场动画（230ms）播完再移除弹窗，遮罩淡出时长与退场对齐，避免窗口消失瞬间压暗跳变
+    LaunchedEffect(closing) {
+        if (closing) {
+            delay(260)
+            onDismissRequest()
+        }
+    }
+    // 关闭进度：让遮罩随拖拽/预测返回一起变淡
+    val dismissFraction = if (sheetHeightPx > 0f) (dragOffset.value / sheetHeightPx).coerceIn(0f, 1f) else 0f
+
+    Dialog(
+        onDismissRequest = { requestClose() },
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        // 必须在 Dialog 内容里取 LocalView 才能拿到弹窗自己的窗口：
+        // 禁用窗口自带动画和系统压暗层（FLAG_DIM_BEHIND）——压暗由下方自绘遮罩负责。
+        // 若留着系统压暗层，它不跟随任何动画，窗口销毁瞬间直接消失 = 压暗"最后闪一下"
+        val dialogView = LocalView.current
+        SideEffect {
+            (dialogView.parent as? DialogWindowProvider)?.window?.let { applyDialogWindowDecor(it) }
+        }
+        val scrimAlpha by animateFloatAsState(
+            targetValue = if (shown) 1f else 0f,
+            animationSpec = tween(230, easing = FastOutSlowInEasing),
+            label = "sheetScrimAlpha"
+        )
+        Box(modifier = Modifier.fillMaxSize()) {
+            // 遮罩：点按关闭；随拖拽/预测返回的关闭进度同步变淡
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = scrimAlpha * (1f - dismissFraction) }
+                    .background(scrimColor)
+                    .pointerInput(Unit) { detectTapGestures { requestClose() } }
+            )
+            AnimatedVisibility(
+                visible = shown,
+                modifier = modifier.align(Alignment.BottomCenter),
+                enter = slideInVertically(tween(300, easing = FastOutSlowInEasing)) { it },
+                exit = slideOutVertically(tween(230, easing = FastOutSlowInEasing)) { it }
+            ) {
+                Column(
+                    modifier = Modifier
+                        .widthIn(max = sheetMaxWidth)
+                        .fillMaxWidth()
+                        .onSizeChanged { sheetHeightPx = it.height.toFloat() }
+                        .graphicsLayer { translationY = dragOffset.value }
+                        .clip(shape)
+                        .background(containerColor)
+                        // Text/空白区不消费点击
+                        .pointerInput(Unit) { detectTapGestures { } }
+                        .navigationBarsPadding()
+                ) {
+                    if (dragHandle != null) {
+                        // 把手：居中放置；按住放大（按下到抬起全程保持，拖动不缩小）；
+                        // 按住可上下拖动弹窗（下拖过阈值松手关闭，否则回弹）
+                        var handlePressed by remember { mutableStateOf(false) }
+                        val handleScale by animateFloatAsState(
+                            targetValue = if (handlePressed) 1.5f else 1f,
+                            animationSpec = tween(150),
+                            label = "sheetHandleScale"
+                        )
+                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            Box(
+                                modifier = Modifier
+                                    .graphicsLayer { scaleX = handleScale; scaleY = handleScale }
+                                    .pointerInput(Unit) {
+                                        val dismissThreshold = 120.dp.toPx()
+                                        val minOffset = -60.dp.toPx()  // 允许稍微往上拖一点
+                                        awaitEachGesture {
+                                            awaitFirstDown(requireUnconsumed = false)
+                                            handlePressed = true
+                                            var dragging = false
+                                            var overSlop = 0f
+                                            while (true) {
+                                                val event = awaitPointerEvent()
+                                                val change = event.changes.firstOrNull { it.pressed } ?: break
+                                                if (!dragging) {
+                                                    overSlop += change.positionChange().y
+                                                    if (kotlin.math.abs(overSlop) > viewConfiguration.touchSlop) dragging = true
+                                                }
+                                                if (dragging) {
+                                                    val delta = change.positionChange().y
+                                                    change.consume()
+                                                    val cap = expandMaxPx
+                                                    val down = dragOffset.value
+                                                    if (cap != null && down > 0f) {
+                                                        // 弹窗已被下拖：无论拖向哪边，先把位移收回（弹窗先回原位）
+                                                        scope.launch {
+                                                            dragOffset.snapTo((down + delta).coerceAtLeast(0f))
+                                                        }
+                                                    } else if (cap != null && (expandPx > 0f || delta < 0f)) {
+                                                        // 上拖不封顶（空间够就一直增高，松手吸附回上限）；已拉长时下拖变短
+                                                        expandPx = (expandPx - delta).coerceAtLeast(0f)
+                                                    } else {
+                                                        scope.launch {
+                                                            dragOffset.snapTo((dragOffset.value + delta).coerceIn(minOffset, Float.MAX_VALUE))
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            handlePressed = false
+                                            if (dragging) {
+                                                // 拉长吸附到档位：拖过半 ⇒ 拉满，否则收回
+                                                val cap = expandMaxPx
+                                                if (cap != null && expandPx != 0f && expandPx != cap) {
+                                                    val target = if (expandPx > cap / 2f) cap else 0f
+                                                    scope.launch {
+                                                        androidx.compose.animation.core.animate(
+                                                            initialValue = expandPx,
+                                                            targetValue = target,
+                                                            animationSpec = tween(200, easing = FastOutSlowInEasing)
+                                                        ) { value, _ -> expandPx = value }
+                                                    }
+                                                }
+                                                if (dragOffset.value > dismissThreshold) requestClose()
+                                                else scope.launch { dragOffset.animateTo(0f, tween(200)) }
+                                            }
+                                        }
+                                    }
+                            ) { dragHandle() }
+                        }
+                    }
+                    CompositionLocalProvider(LocalSheetExpandPx provides expandPx) {
+                        content { requestClose() }
+                    }
+                }
+            }
+
+            // 预测性返回：手势进行中弹窗跟手下移、遮罩同步变淡；取消回弹，确认关闭。
+            // 必须放在 Dialog 内容里，才能注册到弹窗窗口自己的返回分发器
+            PredictiveBackHandler(enabled = !closing) { progress ->
+                try {
+                    progress.collect { event ->
+                        dragOffset.snapTo(event.progress * sheetHeightPx)
+                    }
+                    // 手势完成：提交关闭
+                    requestClose()
+                } catch (e: CancellationException) {
+                    // 手势取消：回弹
+                    scope.launch { dragOffset.animateTo(0f, tween(200)) }
+                    throw e
+                }
+            }
+        }
+    }
+}
+
 // "打开链接"确认弹窗组件
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -105,15 +325,12 @@ fun LinkConfirmDialog(
 ) {
     val context = LocalContext.current
     val view = LocalView.current
-    val scope = rememberCoroutineScope()
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val cornerRadius = getSystemCornerRadius()
 
-    ModalBottomSheet(
+    G2BottomSheet(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(topStart = cornerRadius, topEnd = cornerRadius),
-        sheetState = sheetState,
         scrimColor = Color.Black.copy(alpha = 0.5f),
         dragHandle = {
             Box(
@@ -123,10 +340,9 @@ fun LinkConfirmDialog(
                     .height(4.dp)
                     .clip(RoundedCornerShape(2.dp))
                     .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
-                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = {})
             )
         }
-    ) {
+    ) { onClose ->
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -181,7 +397,7 @@ fun LinkConfirmDialog(
                     Button(
                         onClick = {
                             view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                            scope.launch { sheetState.hide(); onDismiss() }
+                            onClose()
                         },
                         modifier = Modifier.weight(1f).height(48.dp),
                         shape = G2Shapes.button,
@@ -193,13 +409,10 @@ fun LinkConfirmDialog(
                     Button(
                         onClick = {
                             view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                            scope.launch {
-                                sheetState.hide()
-                                onDismiss()
-                                try {
-                                    context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)))
-                                } catch (_: Exception) {}
-                            }
+                            try {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)))
+                            } catch (_: Exception) {}
+                            onClose()
                         },
                         modifier = Modifier.weight(1f).height(48.dp),
                         shape = G2Shapes.button,
@@ -220,15 +433,12 @@ fun QQGroupDialog(
 ) {
     val context = LocalContext.current
     val view = LocalView.current
-    val scope = rememberCoroutineScope()
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val cornerRadius = getSystemCornerRadius()
 
-    ModalBottomSheet(
+    G2BottomSheet(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(topStart = cornerRadius, topEnd = cornerRadius),
-        sheetState = sheetState,
         scrimColor = Color.Black.copy(alpha = 0.5f),
         dragHandle = {
             Box(
@@ -238,10 +448,9 @@ fun QQGroupDialog(
                     .height(4.dp)
                     .clip(RoundedCornerShape(2.dp))
                     .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
-                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = {})
             )
         }
-    ) {
+    ) { onClose ->
         Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp)
         ) {
@@ -255,7 +464,7 @@ fun QQGroupDialog(
                 Button(
                     onClick = {
                         view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                        scope.launch { sheetState.hide(); onDismiss() }
+                        onClose()
                     },
                     modifier = Modifier.weight(1f).height(48.dp), shape = G2Shapes.button,
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -274,7 +483,7 @@ fun QQGroupDialog(
                                 context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://qm.qq.com/cgi-bin/qm/qr?k=1035224343")))
                             } catch (_: Exception) {}
                         }
-                        scope.launch { sheetState.hide(); onDismiss() }
+                        onClose()
                     },
                     modifier = Modifier.weight(1f).height(48.dp), shape = G2Shapes.button,
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)

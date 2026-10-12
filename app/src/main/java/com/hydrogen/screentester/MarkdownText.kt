@@ -11,8 +11,12 @@ import android.text.style.LeadingMarginSpan
 import android.text.style.URLSpan
 import android.util.TypedValue
 import android.view.MotionEvent
+import android.view.VelocityTracker
 import android.view.View
+import android.view.ViewConfiguration
+import android.widget.OverScroller
 import android.widget.TextView
+import androidx.appcompat.widget.AppCompatEditText
 import androidx.appcompat.widget.AppCompatTextView
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -30,6 +34,7 @@ fun MarkdownText(
     lineHeight: TextUnit,
     textColor: Int,
     linkColor: Int,
+    highlightColor: Int? = null,
     onLinkClick: ((String) -> Unit)? = null
 ) {
     val density = LocalDensity.current
@@ -50,6 +55,7 @@ fun MarkdownText(
             tv.setTextSize(TypedValue.COMPLEX_UNIT_PX, fontSizeSp)
             tv.setTextColor(textColor)
             tv.barColor = linkColor
+            if (highlightColor != null) tv.highlightColor = highlightColor
 
             val styled = HtmlCompat.fromHtml(html, HtmlCompat.FROM_HTML_MODE_COMPACT)
             val spannable = SpannableString(styled)
@@ -94,7 +100,25 @@ fun MarkdownText(
                 }
             }
 
-            tv.text = spannable
+            // 标题行（\u2060 标记）在正文字号上放大一档，配合 <b> 呈现小标题观感
+            val headingScale = 1.2f
+            var h = 0
+            while (h < str.length) {
+                if (str[h] == '\u2060') {
+                    var lineEnd = str.indexOf('\n', h)
+                    if (lineEnd == -1) lineEnd = str.length
+                    spannable.setSpan(
+                        android.text.style.RelativeSizeSpan(headingScale),
+                        h, lineEnd, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                    )
+                    h = lineEnd + 1
+                } else {
+                    h++
+                }
+            }
+
+            // EditText 的 text 是 Editable：以 SPANNABLE 方式注入，样式保留
+            tv.setText(spannable, TextView.BufferType.SPANNABLE)
             tv.setLinkTextColor(linkColor)
             // 用只看点击的版本：不做"选中链接范围"，避免按下时出现主题色方块；
             // 长按选中文本仍由 TextView 自身处理（保留选区底色）
@@ -104,7 +128,17 @@ fun MarkdownText(
     )
 }
 
-private class MarkdownTextView(context: Context) : AppCompatTextView(context) {
+private class MarkdownTextView(context: Context) : AppCompatEditText(context) {
+    init {
+        // 只读 EditText：Editor 以可编辑文本的方式接管选择手柄的边缘自动滚动
+        //（普通 selectable TextView 拖手柄到边缘不会滚）。
+        // 键盘输入禁掉、输入法不弹、光标不画、去掉输入框自带下划线背景——
+        // 对外仍然是"可选中复制的只读文本"
+        keyListener = null
+        showSoftInputOnFocus = false
+        isCursorVisible = false
+        background = null
+    }
     private val barPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val dp = context.resources.displayMetrics.density
 
@@ -115,7 +149,7 @@ private class MarkdownTextView(context: Context) : AppCompatTextView(context) {
     override fun onDraw(canvas: Canvas) {
         try {
             val l = layout ?: return
-            val t = text
+            val t = text ?: return
             for (line in 0 until l.lineCount) {
                 val charStart = l.getLineStart(line)
                 if (charStart < t.length && t[charStart] == '​') {
@@ -150,9 +184,10 @@ private fun markdownToHtml(text: String): String {
             continue
         }
         when {
-            trimmed.startsWith("### ") -> { sb.append("<b>${inlineFormat(trimmed.removePrefix("### "))}</b><br>"); continue }
-            trimmed.startsWith("## ") -> { sb.append("<b>${inlineFormat(trimmed.removePrefix("## "))}</b><br>"); continue }
-            trimmed.startsWith("# ") -> { sb.append("<b>${inlineFormat(trimmed.removePrefix("# "))}</b><br>"); continue }
+            // \u2060 标记标题行：渲染阶段整行放大一档（fromHtml 不支持 <font size>，字号不走 HTML）
+            trimmed.startsWith("### ") -> { sb.append("\u2060<b>${inlineFormat(trimmed.removePrefix("### "))}</b><br>"); continue }
+            trimmed.startsWith("## ") -> { sb.append("\u2060<b>${inlineFormat(trimmed.removePrefix("## "))}</b><br>"); continue }
+            trimmed.startsWith("# ") -> { sb.append("\u2060<b>${inlineFormat(trimmed.removePrefix("# "))}</b><br>"); continue }
         }
         if (trimmed.startsWith("> ")) {
             // 零宽空格标记 → onDraw 画竖条 + post-process 加 LeadingMarginSpan
@@ -188,19 +223,124 @@ private fun inlineFormat(text: String): String {
     return result
 }
 
-// 只负责"点开链接"：不调用 LinkMovementMethod.onTouchEvent，
-// 因而不会把链接范围设为选区（那会用主题高亮色画出一个方块）
+// 负责"点开链接" + 自身的拖拽滚动（带惯性）：
+// 1) 不调用 LinkMovementMethod.onTouchEvent，不会把链接范围设为选区（那会画出主题色高亮方块）；
+// 2) 外层不包 Compose verticalScroll（否则拖动选择手柄到边缘时外部容器不会跟着滚），
+//    滚动所有权归 TextView 自己：手指拖拽 1:1 跟手，松手按速度惯性滑行，
+//    选择手柄拖出边缘由 Editor 自动滚
 private class LinkOnlyMovementMethod : LinkMovementMethod() {
+    private var lastY = 0f
+    private var isDragging = false
+    private var touchSlop = -1
+    private var velocityTracker: VelocityTracker? = null
+    private var scroller: OverScroller? = null
+    private var flingView: TextView? = null
+
+    // 惯性滑行：每帧消费 scroller 进度并滚动，直到停下
+    private val flingRunnable = object : Runnable {
+        override fun run() {
+            val view = flingView ?: return
+            val s = scroller ?: return
+            if (s.computeScrollOffset()) {
+                view.scrollTo(0, s.currY.coerceIn(0, maxScroll(view)))
+                view.postOnAnimation(this)
+            } else {
+                flingView = null
+            }
+        }
+    }
+
     override fun onTouchEvent(widget: TextView, buffer: Spannable, event: MotionEvent): Boolean {
-        if (event.action == MotionEvent.ACTION_UP) {
-            val l = widget.layout ?: return false
-            val offset = l.getOffsetForHorizontal(l.getLineForVertical(event.y.toInt()), event.x)
-            val spans = buffer.getSpans(offset, offset, ClickableSpan::class.java)
-            if (spans.isNotEmpty()) {
-                widget.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
-                spans[0].onClick(widget)
+        if (touchSlop < 0) touchSlop = ViewConfiguration.get(widget.context).scaledTouchSlop
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                stopFling(widget)
+                obtainTracker().clear()
+                obtainTracker().addMovement(event)
+                lastY = event.y
+                isDragging = false
                 return true
             }
+            MotionEvent.ACTION_MOVE -> {
+                velocityTracker?.addMovement(event)
+                val dy = lastY - event.y
+                if (isDragging || kotlin.math.abs(dy) > touchSlop) {
+                    isDragging = true
+                    lastY = event.y
+                    scrollToClamped(widget, (widget.scrollY + dy).toInt())
+                }
+                return true
+            }
+            MotionEvent.ACTION_UP -> {
+                velocityTracker?.addMovement(event)
+                if (!isDragging) {
+                    val handled = clickLinkIfAny(widget, buffer, event)
+                    recycleTracker()
+                    return handled
+                }
+                // 先取速度再回收 tracker（recycle 后不可再用）
+                val tracker = velocityTracker
+                var vy = 0f
+                if (tracker != null) {
+                    tracker.computeCurrentVelocity(1000)
+                    vy = tracker.yVelocity
+                }
+                recycleTracker()
+                if (kotlin.math.abs(vy) > ViewConfiguration.get(widget.context).scaledMinimumFlingVelocity) {
+                    startFling(widget, vy)
+                }
+                return true
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                recycleTracker()
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun obtainTracker(): VelocityTracker {
+        if (velocityTracker == null) velocityTracker = VelocityTracker.obtain()
+        return velocityTracker!!
+    }
+
+    private fun recycleTracker() {
+        velocityTracker?.recycle()
+        velocityTracker = null
+    }
+
+    private fun maxScroll(widget: TextView): Int =
+        ((widget.layout?.height ?: 0) - widget.height + widget.paddingTop + widget.paddingBottom).coerceAtLeast(0)
+
+    private fun scrollToClamped(widget: TextView, y: Int) {
+        widget.scrollTo(0, y.coerceIn(0, maxScroll(widget)))
+    }
+
+    private fun startFling(widget: TextView, vy: Float) {
+        if (maxScroll(widget) == 0) return
+        val s = scroller ?: OverScroller(widget.context).also { scroller = it }
+        s.forceFinished(true)
+        s.fling(0, widget.scrollY, 0, -vy.toInt(), 0, 0, 0, maxScroll(widget))
+        flingView = widget
+        widget.removeCallbacks(flingRunnable)
+        widget.postOnAnimation(flingRunnable)
+    }
+
+    private fun stopFling(widget: TextView) {
+        scroller?.forceFinished(true)
+        widget.removeCallbacks(flingRunnable)
+        flingView = null
+    }
+
+    private fun clickLinkIfAny(widget: TextView, buffer: Spannable, event: MotionEvent): Boolean {
+        val l = widget.layout ?: return false
+        // 内部滚动后，布局坐标 = 视口坐标 + scrollY
+        val offset = l.getOffsetForHorizontal(l.getLineForVertical((event.y + widget.scrollY).toInt()), event.x)
+        val spans = buffer.getSpans(offset, offset, ClickableSpan::class.java)
+        if (spans.isNotEmpty()) {
+            widget.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
+            spans[0].onClick(widget)
+            return true
         }
         return false
     }

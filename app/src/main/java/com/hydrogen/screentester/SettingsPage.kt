@@ -188,7 +188,8 @@ fun SingleColorModePanel(
 
     Spacer(Modifier.height(16.dp))
 
-    val maxCollapsedCount = 12
+    // 折叠阈值：4 行（6 个一行 × 4）= 24，超出才显示「展开全部」
+    val maxCollapsedCount = 24
     val visiblePresets = if (isPresetsExpanded) allPresets else allPresets.take(maxCollapsedCount)
     val chunkedRows = visiblePresets.chunked(6)
 

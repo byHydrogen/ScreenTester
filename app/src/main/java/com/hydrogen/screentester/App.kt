@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.Application
 import android.content.pm.ActivityInfo
 import android.os.Bundle
+import com.google.android.material.color.DynamicColors
 
 /**
  * 按屏幕尺寸统一决定方向：大屏（sw ≥ 600dp）跟随用户旋转，手机锁竖屏（MainActivity 例外）。
@@ -14,6 +15,9 @@ class App : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Android 12+ 把系统莫奈取色应用到 XML 主题（Theme.Material3）：
+        // 弹窗里文字选择的悬浮工具条、选择手柄、光标颜色都跟随主题，需要这里开启才会是莫奈色
+        DynamicColors.applyToActivitiesIfAvailable(this)
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityPreCreated(activity: Activity, savedInstanceState: Bundle?) {
                 // 方向统一在这里决定：大屏跟随旋转；手机锁竖屏，MainActivity 例外

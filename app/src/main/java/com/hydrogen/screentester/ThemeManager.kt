@@ -64,6 +64,23 @@ object ThemeSettings {
     var userPresets by mutableStateOf<List<Int>>(emptyList())
     // 背景色卡片的独立用户预设（与线条色分开）
     var bgUserPresets by mutableStateOf<List<Int>>(emptyList())
+    // 背景预设里被用户长按删除的内置颜色：删除后不再显示，重新「保存为预设」即恢复
+    var bgRemovedPresets by mutableStateOf<Set<Int>>(emptySet())
+    // 背景预设的 12 个内置色（BackgroundColorPanel 显示与「是否内置」判断的唯一来源）
+    val defaultBgPresets = listOf(
+        -16777216, // 黑
+        -13619152, // #303030
+        -2565928,  // #D8D8D8
+        -1,        // 白
+        -9263105,  // 蓝
+        -16711936, // 绿
+        -7981735,  // 梅
+        -11556712, // 松石青
+        -7952269,  // 苔绿
+        -2509733,  // 芥末黄
+        -1533306,  // 珊瑚
+        -5994791   // 藤紫
+    )
     var useCustomRadius by mutableStateOf(false)
     var radiusTL by mutableFloatStateOf(-1f)
     var radiusTR by mutableFloatStateOf(-1f)
@@ -375,20 +392,29 @@ object ThemeSettings {
         saveMultiColorSegmentLength(context, 0f)
     }
 
-    // 添加背景色卡片的用户预设
+    // 添加背景色卡片的用户预设（重新保存曾被删除的内置色＝从删除名单移出、恢复内置显示；
+    // 内置色不进用户预设，避免和内置列表重复显示）
     fun addBgUserPreset(context: Context, color: Int) {
-        if (!bgUserPresets.contains(color)) {
+        bgRemovedPresets = bgRemovedPresets - color
+        if (color !in defaultBgPresets && !bgUserPresets.contains(color)) {
             bgUserPresets = bgUserPresets + color
-            context.getSharedPreferences("settings", Context.MODE_PRIVATE)
-                .edit { putString("test_line_bg_presets", bgUserPresets.joinToString(",")) }
         }
+        context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+            .edit {
+                putString("test_line_bg_presets", bgUserPresets.joinToString(","))
+                putString("test_line_bg_removed_presets", bgRemovedPresets.joinToString(","))
+            }
     }
 
-    // 从背景色卡片移除用户预设
-    fun removeBgUserPreset(context: Context, color: Int) {
+    // 从背景色卡片移除预设：内置色记入删除名单，用户预设直接移除
+    fun removeBgPreset(context: Context, color: Int) {
         bgUserPresets = bgUserPresets - color
+        bgRemovedPresets = bgRemovedPresets + color
         context.getSharedPreferences("settings", Context.MODE_PRIVATE)
-            .edit { putString("test_line_bg_presets", bgUserPresets.joinToString(",")) }
+            .edit {
+                putString("test_line_bg_presets", bgUserPresets.joinToString(","))
+                putString("test_line_bg_removed_presets", bgRemovedPresets.joinToString(","))
+            }
     }
 
     fun addUserPreset(context: Context, color: Int) {
@@ -598,7 +624,9 @@ object ThemeSettings {
         isDragAdjustModeEnabled = prefs.getBoolean("drag_adjust_mode_enabled", false)
         isCalibrationLinked = prefs.getBoolean("calibration_is_linked", true)
 
-        // 读取预设列表 (如果为空则初始化默认 6 色)
+        // 读取预设列表：首次运行初始化默认 12 色；
+        // 3.0 预设扩充迁移：往已有列表追加新增的 6 色（已手动添加过的不重复，
+        // 用户删过的旧默认色不恢复）；一次性执行，之后删掉的新色不会再被补回
         val presetStr = prefs.getString("user_presets", null)
         if (presetStr == null) {
             userPresets = listOf(
@@ -607,16 +635,33 @@ object ThemeSettings {
                 -1845525, // TertiaryContainer
                 -1254181, // PrimaryContainer
                 -7981735, // Primary
-                -5431481  // Error 红
+                -5431481, // Error 红
+                -7679029, // 青
+                -9579124, // 莫奈绿
+                -663924, // 奶黄
+                -19045, // 蜜桃橙
+                -3561493, // 藕紫
+                -11900006 // 深蓝（浅色背景下的线条用）
             )
             savePresetsToLocal(context)
         } else if (presetStr.isNotEmpty()) {
             userPresets = presetStr.split(",").mapNotNull { it.toIntOrNull() }
+            if (!prefs.getBoolean("user_presets_expanded_12", false)) {
+                val addedPresets = listOf(-7679029, -9579124, -663924, -19045, -3561493, -11900006)
+                    .filter { it !in userPresets }
+                if (addedPresets.isNotEmpty()) {
+                    userPresets = userPresets + addedPresets
+                    savePresetsToLocal(context)
+                }
+                prefs.edit().putBoolean("user_presets_expanded_12", true).apply()
+            }
         }
 
-        // 背景色卡片独立预设（无默认值）
+        // 背景色卡片独立预设（无默认值）+ 被删除的内置预设名单
         val bgPresetStr = prefs.getString("test_line_bg_presets", "") ?: ""
         bgUserPresets = bgPresetStr.split(",").mapNotNull { it.toIntOrNull() }
+        val bgRemovedStr = prefs.getString("test_line_bg_removed_presets", "") ?: ""
+        bgRemovedPresets = bgRemovedStr.split(",").mapNotNull { it.toIntOrNull() }.toSet()
     }
 
     // 检测屏幕圆角圆心数据是否可用

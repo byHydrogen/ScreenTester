@@ -117,7 +117,6 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
-import kotlin.math.abs
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -415,7 +414,6 @@ private fun DevicePreview(
     // 松手时的甩动速度（决定落点），以及轴锁定状态
     val dragVelocityTracker = remember { VelocityTracker() }
     var dragAccumulated by remember { mutableStateOf(Offset.Zero) }
-    var dragAxis by remember { mutableStateOf<String?>(null) }
 
     BoxWithConstraints(modifier = modifier, contentAlignment = Alignment.Center) {
         val outerWidth = maxWidth
@@ -458,8 +456,7 @@ private fun DevicePreview(
         }
         // 手势与拖动位移按缩小进度淡入：滚回顶部自动归位
         val dragFactor = (shrink / 0.2f).coerceIn(0f, 1f)
-        // 轴锁定的判定距离，以及惯性滑行的等效时长（速度 × 时长 = 落点；越小越迟钝）
-        val axisLockPx = with(density) { 8.dp.toPx() }
+        // 惯性滑行的等效时长（速度 × 时长 = 落点；越小越迟钝）
         val flingGlideSeconds = 0.12f
         val maxLeftState = rememberUpdatedState(maxDragLeft)
         val maxRightState = rememberUpdatedState(maxDragRight)
@@ -525,7 +522,6 @@ private fun DevicePreview(
                                     val targetY = (dragY.value + velocity.y * flingGlideSeconds).coerceIn(0f, downLimit)
                                     dragVelocityTracker.resetTracking()
                                     dragAccumulated = Offset.Zero
-                                    dragAxis = null
                                     coroutineScope.launch {
                                         dragX.animateTo(targetX, spring(dampingRatio = 0.8f, stiffness = 400f))
                                     }
@@ -539,17 +535,8 @@ private fun DevicePreview(
                                     // change.position 是相对节点的坐标、几乎恒定，测不出速度
                                     dragAccumulated += dragAmount
                                     dragVelocityTracker.addPosition(change.uptimeMillis, dragAccumulated)
-                                    // 轴锁定：起手按累计位移先定主方向，之后只动那一轴
-                                    if (dragAxis == null &&
-                                        (abs(dragAccumulated.x) > axisLockPx || abs(dragAccumulated.y) > axisLockPx)
-                                    ) {
-                                        dragAxis = if (abs(dragAccumulated.x) >= abs(dragAccumulated.y)) "x" else "y"
-                                    }
-                                    when (dragAxis) {
-                                        "x" -> coroutineScope.launch { dragX.snapTo(dragX.value + dragAmount.x) }
-                                        "y" -> coroutineScope.launch { dragY.snapTo(dragY.value + dragAmount.y) }
-                                        else -> Unit
-                                    }
+                                    coroutineScope.launch { dragX.snapTo(dragX.value + dragAmount.x) }
+                                    coroutineScope.launch { dragY.snapTo(dragY.value + dragAmount.y) }
                                 }
                             )
                         }
@@ -686,15 +673,9 @@ private fun BackgroundColorPanel() {
         }
     }
 
-    // 预设按深浅排序（黑 → 白）
-    val presets = listOf(
-        Color.Black,
-        Color(0xFF303030),
-        Color(0xFFD8D8D8),
-        Color.White,
-        Color(0xFF72A7FF),
-        Color(0xFF00FF00)
-    )
+    // 内置预设统一取自 ThemeSettings.defaultBgPresets；被用户长按删除的不显示
+    val presets = ThemeSettings.defaultBgPresets.map { Color(it) }
+    val removablePresets = presets.filter { it.toArgb() !in ThemeSettings.bgRemovedPresets }
 
     // 精度模式背景开关放最上面：开启后黑边遮挡测试的精度模式也使用下面的自定义背景
     Row(
@@ -732,12 +713,12 @@ private fun BackgroundColorPanel() {
         onHexChange = { hexText = it },
         onHexFocusChange = { isHexFocused = it },
         onInstantColorChange = { instantTarget = it },
-        allPresets = presets + ThemeSettings.bgUserPresets.map { Color(it) },
-        // 背景色的预设保存到独立存储
+        allPresets = removablePresets + ThemeSettings.bgUserPresets.map { Color(it) },
+        // 背景色的预设保存到独立存储；内置预设也允许长按删除（removeBgPreset 内部同时处理两种）
         onSavePreset = { ThemeSettings.addBgUserPreset(context, it) },
-        onRemovePreset = { ThemeSettings.removeBgUserPreset(context, it) },
-        defaultPresets = presets,
-        isCurrentInPresets = (presets + ThemeSettings.bgUserPresets.map { Color(it) }).any { it.toArgb() == effectiveArgb },
+        onRemovePreset = { ThemeSettings.removeBgPreset(context, it) },
+        defaultPresets = emptyList(),
+        isCurrentInPresets = (removablePresets + ThemeSettings.bgUserPresets.map { Color(it) }).any { it.toArgb() == effectiveArgb },
         isPresetsExpanded = presetsExpanded,
         onPresetsExpandedChange = { presetsExpanded = it }
     )
